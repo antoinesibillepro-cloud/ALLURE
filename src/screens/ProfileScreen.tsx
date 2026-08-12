@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { Card, SectionLabel, BtnPrimary, BtnSecondary, Avatar } from '../components/ui'
 import { useApp } from '../context/AppContext'
+import { useQuery } from '../lib/useQuery'
+import { fetchStravaStatus, connectStrava } from '../lib/queries/strava'
 
-const INTEGRATIONS = [
-  { name: 'Strava', emoji: '🟠', connected: true, since: 'Connecté depuis mars 2025' },
-  { name: 'Apple Santé', emoji: '🍎', connected: true, since: 'Connecté depuis jan. 2026' },
-  { name: 'Garmin Connect', emoji: '⌚', connected: false, since: null },
-  { name: 'Coros', emoji: '⌚', connected: false, since: null },
-  { name: 'Google Fit', emoji: '🟢', connected: false, since: null },
+const OTHER_INTEGRATIONS = [
+  { name: 'Apple Santé', emoji: '🍎' },
+  { name: 'Garmin Connect', emoji: '⌚' },
+  { name: 'Coros', emoji: '⌚' },
+  { name: 'Google Fit', emoji: '🟢' },
 ]
 
 const TOP_RECORDS = [
@@ -272,21 +273,17 @@ export default function ProfileScreen({ onBack }: { onBack: () => void }) {
       <Card>
         <SectionLabel>Intégrations</SectionLabel>
         <div className="space-y-3">
-          {INTEGRATIONS.map(({ name, emoji, connected, since }) => (
+          <StravaIntegrationRow />
+          {OTHER_INTEGRATIONS.map(({ name, emoji }) => (
             <div key={name} className="flex items-center gap-3">
               <span className="text-xl w-8 shrink-0 text-center">{emoji}</span>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>{name}</p>
-                <p className="text-xs" style={{ color: connected ? '#5EBA65' : 'var(--text-2)' }}>
-                  {connected ? since : 'Non connecté'}
-                </p>
+                <p className="text-xs" style={{ color: 'var(--text-2)' }}>Bientôt disponible</p>
               </div>
-              <button className="text-xs font-semibold px-3 py-1.5 rounded-[12px] shrink-0 transition-colors"
-                style={{
-                  background: connected ? 'var(--surface2)' : '#F2C400',
-                  color: connected ? 'var(--text-2)' : '#0E0E0D',
-                }}>
-                {connected ? 'Déconnecter' : 'Connecter'}
+              <button disabled className="text-xs font-semibold px-3 py-1.5 rounded-[12px] shrink-0 opacity-40"
+                style={{ background: '#F2C400', color: '#0E0E0D' }}>
+                Connecter
               </button>
             </div>
           ))}
@@ -312,7 +309,45 @@ export default function ProfileScreen({ onBack }: { onBack: () => void }) {
         </div>
       </Card>
 
-      <p className="text-center text-[10px] pb-4" style={{ color: 'var(--text-2)' }}>RunCoach v2.1.0 · Club Paris Athlétisme</p>
+      <p className="text-center text-[10px] pb-4" style={{ color: 'var(--text-2)' }}>ALLURE v2.1.0 · Club Paris Athlétisme</p>
+    </div>
+  )
+}
+
+function StravaIntegrationRow() {
+  const { data: status, loading, refetch } = useQuery(() => fetchStravaStatus(), [])
+  const [connecting, setConnecting] = useState(false)
+
+  const params = new URLSearchParams(window.location.search)
+  const justReturned = params.get('strava')
+  if (justReturned) {
+    window.history.replaceState({}, '', window.location.pathname)
+  }
+
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-xl w-8 shrink-0 text-center">🟠</span>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>Strava</p>
+        <p className="text-xs" style={{ color: status?.connected ? '#5EBA65' : 'var(--text-2)' }}>
+          {loading ? '…' : status?.connected
+            ? `Connecté depuis le ${new Date(status.connectedAt!).toLocaleDateString('fr-FR')}`
+            : justReturned === 'error' ? 'Échec de la connexion, réessaie' : 'Non connecté'}
+        </p>
+      </div>
+      {!status?.connected && (
+        <button disabled={connecting} onClick={async () => { setConnecting(true); await connectStrava() }}
+          className="text-xs font-semibold px-3 py-1.5 rounded-[12px] shrink-0 transition-colors disabled:opacity-50"
+          style={{ background: '#F2C400', color: '#0E0E0D' }}>
+          {connecting ? '…' : 'Connecter'}
+        </button>
+      )}
+      {status?.connected && (
+        <button onClick={() => refetch()} className="text-xs font-semibold px-3 py-1.5 rounded-[12px] shrink-0"
+          style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
+          Actualiser
+        </button>
+      )}
     </div>
   )
 }

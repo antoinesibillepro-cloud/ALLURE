@@ -539,6 +539,88 @@ export type Database = {
           },
         ]
       }
+      strava_accounts: {
+        Row: {
+          access_token: string
+          connected_at: string
+          expires_at: string
+          profile_id: string
+          refresh_token: string
+          scope: string
+          strava_athlete_id: number
+        }
+        Insert: {
+          access_token: string
+          connected_at?: string
+          expires_at: string
+          profile_id: string
+          refresh_token: string
+          scope: string
+          strava_athlete_id: number
+        }
+        Update: {
+          access_token?: string
+          connected_at?: string
+          expires_at?: string
+          profile_id?: string
+          refresh_token?: string
+          scope?: string
+          strava_athlete_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "strava_accounts_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      strava_activities: {
+        Row: {
+          created_at: string
+          distance_m: number
+          id: string
+          moving_time_s: number
+          name: string
+          profile_id: string
+          start_date: string
+          strava_id: number
+          type: string
+        }
+        Insert: {
+          created_at?: string
+          distance_m?: number
+          id?: string
+          moving_time_s?: number
+          name: string
+          profile_id: string
+          start_date: string
+          strava_id: number
+          type: string
+        }
+        Update: {
+          created_at?: string
+          distance_m?: number
+          id?: string
+          moving_time_s?: number
+          name?: string
+          profile_id?: string
+          start_date?: string
+          strava_id?: number
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "strava_activities_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

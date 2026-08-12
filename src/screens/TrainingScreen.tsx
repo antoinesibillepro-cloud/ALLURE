@@ -4,6 +4,7 @@ import AddSessionSheet, { type SessionData } from '../components/AddSessionSheet
 import { useApp } from '../context/AppContext'
 import { useQuery } from '../lib/useQuery'
 import { fetchAthleteSessions, validateSession, logFreeSession, type AthleteSession } from '../lib/queries/sessions'
+import { fetchStravaStatus, connectStrava, syncStrava, fetchStravaActivities, type StravaActivity } from '../lib/queries/strava'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function paceStr(kmh: number): string {
@@ -155,6 +156,27 @@ export default function TrainingScreen() {
   const [activeExercise, setActiveExercise] = useState<string | null>('Fessiers')
   const [showAddSession, setShowAddSession] = useState(false)
   const [validatingId, setValidatingId] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
+
+  const { data: stravaStatus, refetch: refetchStravaStatus } = useQuery(() => fetchStravaStatus(), [])
+  const { data: stravaActivities, refetch: refetchStravaActivities } = useQuery<StravaActivity[]>(
+    () => (profile ? fetchStravaActivities(profile.id) : Promise.resolve([])),
+    [profile?.id],
+  )
+
+  async function handleStravaButton() {
+    if (!stravaStatus?.connected) {
+      await connectStrava()
+      return
+    }
+    setSyncing(true)
+    try {
+      await syncStrava()
+      await Promise.all([refetchStravaActivities(), refetchStravaStatus()])
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const { data: monthSessions, refetch: refetchMonth } = useQuery<AthleteSession[]>(
     () => (profile ? fetchAthleteSessions(profile.id, isoDate(monthStart), isoDate(monthEnd)) : Promise.resolve([])),
@@ -200,14 +222,40 @@ export default function TrainingScreen() {
       {/* ── Header ── */}
       <div className="flex items-center justify-between pt-1">
         <h1 className="text-2xl font-black" style={{ color: 'var(--text-1)' }}>Entraînements</h1>
-        <button className="flex items-center gap-2 text-white text-xs font-bold px-3.5 py-2 rounded-2xl"
+        <button onClick={handleStravaButton} disabled={syncing}
+          className="flex items-center gap-2 text-white text-xs font-bold px-3.5 py-2 rounded-2xl disabled:opacity-60"
           style={{ background: '#FC5200' }}>
           <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
             <path d="M6 1L7.5 4.5H11L8 6.5L9.5 10.5L6 8L2.5 10.5L4 6.5L1 4.5H4.5L6 1Z" fill="white" />
           </svg>
-          Synchroniser →
+          {!stravaStatus?.connected ? 'Connecter Strava' : syncing ? 'Synchronisation…' : 'Synchroniser →'}
         </button>
       </div>
+
+      {stravaStatus?.connected && (
+        <Card className="!p-4">
+          <SectionLabel>Activités Strava récentes</SectionLabel>
+          {!stravaActivities?.length ? (
+            <p className="text-sm" style={{ color: 'var(--text-2)' }}>Aucune activité synchronisée pour l'instant — clique sur Synchroniser.</p>
+          ) : (
+            <div className="space-y-2">
+              {stravaActivities.map((a) => (
+                <div key={a.id} className="flex items-center justify-between py-1.5">
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>{a.name}</p>
+                    <p className="text-xs" style={{ color: 'var(--text-2)' }}>
+                      {new Date(a.start_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} · {a.type}
+                    </p>
+                  </div>
+                  <p className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>
+                    {(a.distance_m / 1000).toFixed(1)} km · {Math.round(a.moving_time_s / 60)} min
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* ── Calendar ── */}
       <Card className="!p-4">

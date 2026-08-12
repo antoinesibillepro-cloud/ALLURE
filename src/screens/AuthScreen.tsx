@@ -55,7 +55,7 @@ export default function AuthScreen() {
               <circle cx="9" cy="7.5" r="2" fill="#F2C400" />
             </svg>
           </div>
-          <p className="font-black text-lg leading-none tracking-tight" style={{ color: 'var(--text-1)' }}>RunCoach</p>
+          <p className="font-black text-lg leading-none tracking-tight" style={{ color: 'var(--text-1)' }}>ALLURE</p>
         </div>
 
         <div className="rounded-3xl p-6" style={{ background: 'var(--card)', boxShadow: 'var(--card-shadow)' }}>

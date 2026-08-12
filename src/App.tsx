@@ -262,7 +262,7 @@ export default function App() {
                 <circle cx="9" cy="7.5" r="2" fill="#F2C400" />
               </svg>
             </div>
-            <p className="font-black text-[15px] leading-none tracking-tight" style={{ color: 'var(--text-1)' }}>RunCoach</p>
+            <p className="font-black text-[15px] leading-none tracking-tight" style={{ color: 'var(--text-1)' }}>ALLURE</p>
           </button>
 
           {/* Search bar — like Strava */}
