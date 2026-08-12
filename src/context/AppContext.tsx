@@ -13,6 +13,7 @@ export interface Profile {
   email: string
   vma: number | null
   category: string | null
+  notification_prefs: { messages: boolean; sessions: boolean; reminders: boolean; competitions: boolean }
 }
 
 interface AppCtx {

@@ -1,26 +1,19 @@
 import { useState } from 'react'
-import { Card, SectionLabel, BtnPrimary, BtnSecondary, Avatar } from '../components/ui'
+import { Card, SectionLabel, Avatar } from '../components/ui'
 import { useApp } from '../context/AppContext'
 import { useQuery } from '../lib/useQuery'
 import { fetchStravaStatus, connectStrava } from '../lib/queries/strava'
+import { supabase } from '../lib/supabase'
+import {
+  fetchClubName, fetchReferentCoach, fetchPersonalRecords, createPersonalRecord, deletePersonalRecord,
+  fetchInjuries, createInjury, saveNotificationPrefs, type PersonalRecord, type Injury, type NotificationPrefs,
+} from '../lib/queries/profileExtras'
 
 const OTHER_INTEGRATIONS = [
   { name: 'Apple Santé', emoji: '🍎' },
   { name: 'Garmin Connect', emoji: '⌚' },
   { name: 'Coros', emoji: '⌚' },
   { name: 'Google Fit', emoji: '🟢' },
-]
-
-const TOP_RECORDS = [
-  { dist: '1500m', time: "4'12\"", date: 'Mars 2026', sb: true },
-  { dist: '5 km', time: "16'22\"", date: 'Juin 2026', sb: false },
-  { dist: '10 km', time: "33'47\"", date: 'Avr 2026', sb: false },
-]
-
-const INJURY_HISTORY = [
-  { date: 'Fév 2026', type: 'Tendinite rotulienne droite', duration: '12 jours', severity: 'légère' },
-  { date: 'Oct 2025', type: 'Contracture mollet gauche', duration: '5 jours', severity: 'légère' },
-  { date: 'Juin 2025', type: 'Périostite tibiale', duration: '3 semaines', severity: 'modérée' },
 ]
 
 const SEVERITY_COLOR: Record<string, string> = {
@@ -64,12 +57,84 @@ export default function ProfileScreen({ onBack }: { onBack: () => void }) {
   const name = profile?.name ?? ''
   const initials = name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
 
-  const [notifs, setNotifs] = useState({
-    messages: true,
-    sessions: true,
-    reminders: false,
-    competitions: true,
-  })
+  const [notifs, setNotifs] = useState<NotificationPrefs>(
+    profile?.notification_prefs ?? { messages: true, sessions: true, reminders: false, competitions: true },
+  )
+
+  const { data: clubName } = useQuery(() => (profile ? fetchClubName(profile.club_id) : Promise.resolve('')), [profile?.club_id])
+  const { data: referent } = useQuery(
+    () => (profile && !isCoach ? fetchReferentCoach(profile.club_id) : Promise.resolve(null)),
+    [profile?.club_id, isCoach],
+  )
+  const { data: records, refetch: refetchRecords } = useQuery<PersonalRecord[]>(
+    () => (profile && !isCoach ? fetchPersonalRecords(profile.id) : Promise.resolve([])),
+    [profile?.id, isCoach],
+  )
+  const { data: injuries, refetch: refetchInjuries } = useQuery<Injury[]>(
+    () => (profile && !isCoach ? fetchInjuries(profile.id) : Promise.resolve([])),
+    [profile?.id, isCoach],
+  )
+
+  const [showAddRecord, setShowAddRecord] = useState(false)
+  const [newDiscipline, setNewDiscipline] = useState('')
+  const [newValue, setNewValue] = useState('')
+  const [newRecordDate, setNewRecordDate] = useState(new Date().toISOString().slice(0, 10))
+  const [savingRecord, setSavingRecord] = useState(false)
+
+  const [showAddInjury, setShowAddInjury] = useState(false)
+  const [newInjuryType, setNewInjuryType] = useState('')
+  const [newInjuryDate, setNewInjuryDate] = useState(new Date().toISOString().slice(0, 10))
+  const [newInjuryDuration, setNewInjuryDuration] = useState('')
+  const [newInjurySeverity, setNewInjurySeverity] = useState<'légère' | 'modérée' | 'grave'>('légère')
+  const [savingInjury, setSavingInjury] = useState(false)
+
+  const [newPassword, setNewPassword] = useState('')
+  const [passwordMsg, setPasswordMsg] = useState<string | null>(null)
+  const [showPasswordForm, setShowPasswordForm] = useState(false)
+
+  async function toggleNotif(key: keyof NotificationPrefs, value: boolean) {
+    const next = { ...notifs, [key]: value }
+    setNotifs(next)
+    if (profile) await saveNotificationPrefs(profile.id, next)
+  }
+
+  async function handleAddRecord() {
+    if (!profile || !newDiscipline.trim() || !newValue.trim()) return
+    setSavingRecord(true)
+    try {
+      await createPersonalRecord(profile.id, newDiscipline.trim(), newValue.trim(), newRecordDate)
+      setNewDiscipline(''); setNewValue('')
+      setShowAddRecord(false)
+      await refetchRecords()
+    } finally {
+      setSavingRecord(false)
+    }
+  }
+
+  async function handleDeleteRecord(id: string) {
+    await deletePersonalRecord(id)
+    await refetchRecords()
+  }
+
+  async function handleAddInjury() {
+    if (!profile || !newInjuryType.trim()) return
+    setSavingInjury(true)
+    try {
+      await createInjury(profile.id, { type: newInjuryType.trim(), date: newInjuryDate, duration_text: newInjuryDuration || null, severity: newInjurySeverity })
+      setNewInjuryType(''); setNewInjuryDuration('')
+      setShowAddInjury(false)
+      await refetchInjuries()
+    } finally {
+      setSavingInjury(false)
+    }
+  }
+
+  async function handleChangePassword() {
+    if (newPassword.length < 6) { setPasswordMsg('8 caractères minimum.'); return }
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    setPasswordMsg(error ? error.message : 'Mot de passe mis à jour ✓')
+    if (!error) { setNewPassword(''); setTimeout(() => setShowPasswordForm(false), 1500) }
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-2xl mx-auto md:max-w-xl">
@@ -97,44 +162,32 @@ export default function ProfileScreen({ onBack }: { onBack: () => void }) {
               }}>
               {initials}
             </div>
-            <span className="absolute bottom-0 right-0 w-5 h-5 bg-[#5EBA65] rounded-full flex items-center justify-center"
-              style={{ border: '2px solid var(--card)' }}>
-              <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
-                <path d="M1 3L3 5L7 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </span>
           </div>
           <div className="flex-1 min-w-0">
             <h2 className="text-xl font-black leading-tight" style={{ color: 'var(--text-1)' }}>
               {name}
             </h2>
-            <p className="text-sm mt-0.5" style={{ color: 'var(--text-2)' }}>Club Paris Athlétisme</p>
+            <p className="text-sm mt-0.5" style={{ color: 'var(--text-2)' }}>{clubName}</p>
             <div className="flex items-center gap-2 mt-2">
               <span className="text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest"
                 style={{ background: isCoach ? '#F2C400' : 'rgba(242,196,0,0.12)', color: isCoach ? '#0E0E0D' : '#F2C400' }}>
-                {isCoach ? 'Coach' : 'Élite'}
-              </span>
-              <span className="text-[9px] px-2.5 py-1 rounded-full uppercase tracking-widest"
-                style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
-                {isCoach ? 'Entraîneur FFA' : 'Athlète senior'}
+                {isCoach ? 'Coach' : 'Athlète'}
               </span>
             </div>
           </div>
         </div>
 
         <div className="mt-5 space-y-3 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
-          {[
-            { label: 'Email', value: profile?.email ?? '' },
-          ].map(({ label, value }) => (
-            <div key={label} className="flex items-center justify-between">
-              <span className="text-xs" style={{ color: 'var(--text-2)' }}>{label}</span>
-              <span className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>{value}</span>
-            </div>
-          ))}
           <div className="flex items-center justify-between">
-            <span className="text-xs" style={{ color: 'var(--text-2)' }}>Profil FFA</span>
-            <a href="#" className="text-sm font-medium text-[#F2C400] underline underline-offset-2">athle.fr →</a>
+            <span className="text-xs" style={{ color: 'var(--text-2)' }}>Email</span>
+            <span className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>{profile?.email ?? ''}</span>
           </div>
+          {!isCoach && (
+            <div className="flex items-center justify-between">
+              <span className="text-xs" style={{ color: 'var(--text-2)' }}>VMA</span>
+              <span className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>{profile?.vma ? `${profile.vma} km/h` : 'Non renseignée'}</span>
+            </div>
+          )}
         </div>
       </Card>
 
@@ -142,40 +195,60 @@ export default function ProfileScreen({ onBack }: { onBack: () => void }) {
       {!isCoach && (
         <Card>
           <SectionLabel>Coach référent</SectionLabel>
-          <div className="flex items-center gap-3">
-            <Avatar initials="ML" size={44} yellow />
-            <div className="flex-1">
-              <p className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>Marc Leroy</p>
-              <p className="text-xs" style={{ color: 'var(--text-2)' }}>Coach · Groupe Élite & Confirmé</p>
-              <p className="text-xs text-[#5EBA65]">En ligne</p>
+          {!referent ? (
+            <p className="text-sm" style={{ color: 'var(--text-2)' }}>Aucun coach n'a encore rejoint ton club.</p>
+          ) : (
+            <div className="flex items-center gap-3">
+              <Avatar initials={referent.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()} size={44} yellow />
+              <div className="flex-1">
+                <p className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>{referent.name}</p>
+                <p className="text-xs" style={{ color: 'var(--text-2)' }}>Coach du club</p>
+              </div>
             </div>
-            <button className="text-xs font-bold px-3 py-2 rounded-[12px] bg-[#F2C400] text-[#0E0E0D]">
-              Message
-            </button>
-          </div>
+          )}
         </Card>
       )}
 
       {/* Records (athlete) */}
       {!isCoach && (
         <Card>
-          <SectionLabel>Mes meilleurs records</SectionLabel>
-          <div className="space-y-0.5">
-            {TOP_RECORDS.map((r, i) => (
-              <div key={i} className="flex items-center justify-between py-2.5"
-                style={{ borderBottom: i < TOP_RECORDS.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                <span className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>{r.dist}</span>
-                <div className="flex items-center gap-3">
-                  {r.sb && (
-                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider"
-                      style={{ background: 'rgba(242,196,0,0.15)', color: '#F2C400' }}>SB</span>
-                  )}
-                  <span className="text-xs" style={{ color: 'var(--text-2)' }}>{r.date}</span>
-                  <span className="text-lg font-black" style={{ color: 'var(--text-1)' }}>{r.time}</span>
-                </div>
-              </div>
-            ))}
+          <div className="flex items-center justify-between mb-2">
+            <SectionLabel>Mes meilleurs records</SectionLabel>
+            <button onClick={() => setShowAddRecord((v) => !v)} className="text-xs font-semibold" style={{ color: '#F2C400' }}>+ Ajouter</button>
           </div>
+          {showAddRecord && (
+            <div className="mb-3 p-3 rounded-xl space-y-2" style={{ background: 'var(--surface2)' }}>
+              <div className="grid grid-cols-2 gap-2">
+                <input value={newDiscipline} onChange={(e) => setNewDiscipline(e.target.value)} placeholder="Distance (ex: 5 km)"
+                  className="rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+                <input value={newValue} onChange={(e) => setNewValue(e.target.value)} placeholder="Temps (ex: 18'32&quot;)"
+                  className="rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+              </div>
+              <input type="date" value={newRecordDate} onChange={(e) => setNewRecordDate(e.target.value)}
+                className="w-full rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+              <button onClick={handleAddRecord} disabled={savingRecord || !newDiscipline.trim() || !newValue.trim()}
+                className="text-xs font-bold px-3 py-1.5 rounded-[10px] disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+                {savingRecord ? '…' : 'Ajouter'}
+              </button>
+            </div>
+          )}
+          {!records?.length ? (
+            <p className="text-sm text-center py-3" style={{ color: 'var(--text-2)' }}>Aucun record enregistré.</p>
+          ) : (
+            <div className="space-y-0.5">
+              {records.map((r) => (
+                <div key={r.id} className="flex items-center justify-between py-2.5"
+                  style={{ borderBottom: '1px solid var(--border)' }}>
+                  <span className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>{r.discipline}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs" style={{ color: 'var(--text-2)' }}>{new Date(r.date).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })}</span>
+                    <span className="text-lg font-black" style={{ color: 'var(--text-1)' }}>{r.value}</span>
+                    <button onClick={() => handleDeleteRecord(r.id)} className="text-xs font-semibold text-[#E4574A]">×</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
       )}
 
@@ -184,29 +257,51 @@ export default function ProfileScreen({ onBack }: { onBack: () => void }) {
         <Card>
           <div className="flex items-center justify-between mb-3">
             <SectionLabel>Historique blessures</SectionLabel>
-            <button className="text-xs font-semibold px-2.5 py-1 rounded-lg"
+            <button onClick={() => setShowAddInjury((v) => !v)} className="text-xs font-semibold px-2.5 py-1 rounded-lg"
               style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
               + Signaler
             </button>
           </div>
-          {INJURY_HISTORY.length === 0 ? (
+          {showAddInjury && (
+            <div className="mb-3 p-3 rounded-xl space-y-2" style={{ background: 'var(--surface2)' }}>
+              <input value={newInjuryType} onChange={(e) => setNewInjuryType(e.target.value)} placeholder="Type de blessure"
+                className="w-full rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+              <div className="grid grid-cols-2 gap-2">
+                <input type="date" value={newInjuryDate} onChange={(e) => setNewInjuryDate(e.target.value)}
+                  className="rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+                <input value={newInjuryDuration} onChange={(e) => setNewInjuryDuration(e.target.value)} placeholder="Durée (ex: 12 jours)"
+                  className="rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+              </div>
+              <div className="flex gap-2">
+                {(['légère', 'modérée', 'grave'] as const).map((s) => (
+                  <button key={s} onClick={() => setNewInjurySeverity(s)} className="flex-1 py-1.5 rounded-[10px] text-xs font-bold capitalize"
+                    style={{ background: newInjurySeverity === s ? SEVERITY_COLOR[s] : 'var(--card)', color: newInjurySeverity === s ? '#0E0E0D' : 'var(--text-2)' }}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+              <button onClick={handleAddInjury} disabled={savingInjury || !newInjuryType.trim()}
+                className="text-xs font-bold px-3 py-1.5 rounded-[10px] disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+                {savingInjury ? '…' : 'Enregistrer'}
+              </button>
+            </div>
+          )}
+          {!injuries?.length ? (
             <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Aucune blessure enregistrée</p>
           ) : (
             <div className="space-y-0">
-              {INJURY_HISTORY.map((inj, i) => (
-                <div key={i} className="flex items-start gap-3 py-3"
-                  style={{ borderBottom: i < INJURY_HISTORY.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                  <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0"
-                    style={{ background: SEVERITY_COLOR[inj.severity] }} />
+              {injuries.map((inj) => (
+                <div key={inj.id} className="flex items-start gap-3 py-3"
+                  style={{ borderBottom: '1px solid var(--border)' }}>
+                  <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: SEVERITY_COLOR[inj.severity] }} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>{inj.type}</p>
-                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>{inj.duration} · {inj.date}</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>
+                      {inj.duration_text ? `${inj.duration_text} · ` : ''}{new Date(inj.date).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })}
+                    </p>
                   </div>
                   <span className="text-[9px] px-2 py-0.5 rounded-full font-semibold capitalize"
-                    style={{
-                      background: `${SEVERITY_COLOR[inj.severity]}18`,
-                      color: SEVERITY_COLOR[inj.severity],
-                    }}>
+                    style={{ background: `${SEVERITY_COLOR[inj.severity]}18`, color: SEVERITY_COLOR[inj.severity] }}>
                     {inj.severity}
                   </span>
                 </div>
@@ -263,7 +358,7 @@ export default function ProfileScreen({ onBack }: { onBack: () => void }) {
                 <p className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>{label}</p>
                 <p className="text-xs" style={{ color: 'var(--text-2)' }}>{sub}</p>
               </div>
-              <Toggle on={notifs[key]} onChange={(v) => setNotifs((prev) => ({ ...prev, [key]: v }))} />
+              <Toggle on={notifs[key]} onChange={(v) => toggleNotif(key, v)} />
             </div>
           ))}
         </div>
@@ -274,11 +369,11 @@ export default function ProfileScreen({ onBack }: { onBack: () => void }) {
         <SectionLabel>Intégrations</SectionLabel>
         <div className="space-y-3">
           <StravaIntegrationRow />
-          {OTHER_INTEGRATIONS.map(({ name, emoji }) => (
-            <div key={name} className="flex items-center gap-3">
+          {OTHER_INTEGRATIONS.map(({ name: intName, emoji }) => (
+            <div key={intName} className="flex items-center gap-3">
               <span className="text-xl w-8 shrink-0 text-center">{emoji}</span>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>{name}</p>
+                <p className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>{intName}</p>
                 <p className="text-xs" style={{ color: 'var(--text-2)' }}>Bientôt disponible</p>
               </div>
               <button disabled className="text-xs font-semibold px-3 py-1.5 rounded-[12px] shrink-0 opacity-40"
@@ -294,14 +389,20 @@ export default function ProfileScreen({ onBack }: { onBack: () => void }) {
       <Card>
         <SectionLabel>Compte</SectionLabel>
         <div className="space-y-2">
-          <button className="w-full text-left px-4 py-3 rounded-[12px] text-sm font-medium transition-colors"
+          <button onClick={() => setShowPasswordForm((v) => !v)} className="w-full text-left px-4 py-3 rounded-[12px] text-sm font-medium transition-colors"
             style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
             Changer le mot de passe
           </button>
-          <button className="w-full text-left px-4 py-3 rounded-[12px] text-sm font-medium transition-colors"
-            style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
-            Feedback & suggestions
-          </button>
+          {showPasswordForm && (
+            <div className="p-3 rounded-[12px] space-y-2" style={{ background: 'var(--surface2)' }}>
+              <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Nouveau mot de passe"
+                className="w-full rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+              {passwordMsg && <p className="text-xs" style={{ color: passwordMsg.includes('✓') ? '#5EBA65' : '#E4574A' }}>{passwordMsg}</p>}
+              <button onClick={handleChangePassword} className="text-xs font-bold px-3 py-1.5 rounded-[10px]" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+                Mettre à jour
+              </button>
+            </div>
+          )}
           <button onClick={signOut} className="w-full text-left px-4 py-3 rounded-[12px] text-sm font-medium text-[#C94040] transition-colors"
             style={{ background: 'rgba(201,64,64,0.08)' }}>
             Se déconnecter
@@ -309,7 +410,7 @@ export default function ProfileScreen({ onBack }: { onBack: () => void }) {
         </div>
       </Card>
 
-      <p className="text-center text-[10px] pb-4" style={{ color: 'var(--text-2)' }}>ALLURE v2.1.0 · Club Paris Athlétisme</p>
+      <p className="text-center text-[10px] pb-4" style={{ color: 'var(--text-2)' }}>ALLURE · {clubName}</p>
     </div>
   )
 }

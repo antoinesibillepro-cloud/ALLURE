@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext'
 import { useQuery } from '../lib/useQuery'
 import { fetchAthleteSessions, validateSession, logFreeSession, type AthleteSession } from '../lib/queries/sessions'
 import { fetchStravaStatus, connectStrava, syncStrava, fetchStravaActivities, type StravaActivity } from '../lib/queries/strava'
+import { fetchCompetitions, createCompetition, toggleCompetitionDone, deleteCompetition, updateVma, type Competition } from '../lib/queries/profileExtras'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function paceStr(kmh: number): string {
@@ -24,39 +25,6 @@ function splitStr(kmh: number, m: number): string {
 // ── data ─────────────────────────────────────────────────────────────────────
 type Chip = { id: string; label: string; done: boolean; description: string | null; sessionId: string | null }
 
-type CompEntry = { name: string; date: string; type: string; daysLeft: number }
-const COMPETITIONS: CompEntry[] = [
-  { name: '5000 m', date: '26 sept · 14:30', type: 'course', daysLeft: 47 },
-]
-
-type CrossEntry = { date: string; dist: string; dur: string }
-const CROSS: Record<string, CrossEntry[]> = {
-  vélo: [
-    { date: '7 août',   dist: '25 km', dur: '60 min' },
-    { date: '30 juil.', dist: '3,38 km', dur: '10 min' },
-    { date: '30 juil.', dist: '3,98 km', dur: '12 min' },
-    { date: '29 juil.', dist: '3,91 km', dur: '12 min' },
-    { date: '28 juil.', dist: '5,42 km', dur: '16 min' },
-    { date: '28 juil.', dist: '5,14 km', dur: '12 min' },
-    { date: '27 juil.', dist: '2,87 km', dur: '8 min' },
-    { date: '27 juil.', dist: '3,95 km', dur: '12 min' },
-  ],
-  natation: [
-    { date: '5 août',   dist: '2000 m', dur: '45 min' },
-    { date: '30 juil.', dist: '1500 m', dur: '34 min' },
-    { date: '27 juil.', dist: '1800 m', dur: '40 min' },
-  ],
-  abdos: [
-    { date: '4 août',   dist: '—', dur: '25 min' },
-    { date: '29 juil.', dist: '—', dur: '20 min' },
-    { date: '25 juil.', dist: '—', dur: '30 min' },
-  ],
-}
-
-const VELO_CHART = [0, 3.38, 3.98, 3.91, 5.42, 5.14, 2.87, 3.95]
-const NATA_CHART = [0, 1.5, 1.8, 2.0]
-const ABDOS_CHART = [25, 20, 30]
-
 const VMA_ZONES = [
   { pct: 60, label: 'Footing très cool' },
   { pct: 65, label: 'Footing cool' },
@@ -68,72 +36,6 @@ const VMA_ZONES = [
   { pct: 95, label: 'VMA moyenne' },
   { pct: 100, label: 'VMA (100%)' },
 ]
-
-type MuscGroup = { title: string; exercises: string[] }
-const MUSC_GROUPS: MuscGroup[] = [
-  { title: 'HAUT DU CORPS', exercises: ['Développé couché', 'Tirage menton', 'Tirage tête', 'Développé nuque', 'Rowing'] },
-  { title: 'HALTÉROPHILIE', exercises: ['Épaulé', 'Épaulé-jeté', 'Épaulé-jeté fente', 'Arraché', 'Arraché fente'] },
-  { title: 'BAS DU CORPS',  exercises: ['Squat complet', 'Demi-squat', 'Presse à cuisses', 'Leg curl', 'Mollet barre guidée'] },
-  { title: 'AUTRES',        exercises: ['Fentes marché', 'Fentes caisse', 'Fessiers'] },
-]
-
-// ── mini SVG area chart ───────────────────────────────────────────────────────
-function AreaChart({ data, color }: { data: number[]; color: string }) {
-  const W = 320, H = 80
-  const max = Math.max(...data, 1)
-  const pts = data.map((v, i) => ({
-    x: (i / (data.length - 1)) * (W - 16) + 8,
-    y: H - 12 - (v / max) * (H - 20),
-  }))
-  const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
-  const area = `${line} L${pts[pts.length - 1].x},${H - 12} L${pts[0].x},${H - 12} Z`
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 80 }}>
-      <defs>
-        <linearGradient id="ag" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.35" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      {[0, 25, 50].map(v => {
-        const y = H - 12 - (v / (max * 1.1)) * (H - 20)
-        return <line key={v} x1="8" x2={W - 8} y1={y} y2={y} stroke="var(--border)" strokeWidth="0.5" />
-      })}
-      <path d={area} fill="url(#ag)" />
-      <path d={line} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-      {pts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="3" fill={color} />)}
-    </svg>
-  )
-}
-
-// ── charges table ─────────────────────────────────────────────────────────────
-function ChargesTable({ exercise, maxKg }: { exercise: string; maxKg: number }) {
-  const rows = [100, 95, 90, 85, 80, 75, 70, 65, 60, 50, 40, 30]
-  return (
-    <div className="mt-4 rounded-2xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-      <div className="px-4 py-3" style={{ background: 'var(--surface2)' }}>
-        <p className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>Charges — {exercise}</p>
-      </div>
-      <div className="grid grid-cols-2 px-4 py-2 border-b text-[10px] font-bold uppercase tracking-wider"
-        style={{ borderColor: 'var(--border)', color: 'var(--text-2)' }}>
-        <span>% du max</span><span className="text-right">Charge</span>
-      </div>
-      {rows.map((pct) => {
-        const kg = Math.round((pct / 100) * maxKg * 2) / 2
-        return (
-          <div key={pct} className="grid grid-cols-2 px-4 py-2.5 border-b last:border-b-0"
-            style={{ borderColor: 'var(--border)' }}>
-            <span className="text-sm" style={{ color: 'var(--text-2)' }}>{pct} %</span>
-            <span className="text-sm font-semibold text-right" style={{ color: 'var(--text-1)' }}>{kg} kg</span>
-          </div>
-        )
-      })}
-      <p className="px-4 py-2 text-[10px] italic" style={{ color: 'var(--text-2)' }}>
-        Charges arrondies au 2,5 kg le plus proche (disques standard).
-      </p>
-    </div>
-  )
-}
 
 // ── main component ────────────────────────────────────────────────────────────
 const MONTH_LABEL = new Date().toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
@@ -148,15 +50,57 @@ function isoDate(d: Date) { return d.toISOString().slice(0, 10) }
 export default function TrainingScreen() {
   const { profile } = useApp()
   const [selectedDay, setSelectedDay] = useState(now.getDate())
-  const [crossTab, setCrossTab] = useState<'vélo' | 'natation' | 'abdos'>('vélo')
   const [perfTab, setPerfTab] = useState<'allures' | 'musculation'>('allures')
   const [compTab, setCompTab] = useState<'comp' | 'obj'>('comp')
-  const [vma, setVma] = useState(21)
-  const [muscKg, setMuscKg] = useState<Record<string, number>>({ 'Fentes caisse': 20, 'Fessiers': 50 })
-  const [activeExercise, setActiveExercise] = useState<string | null>('Fessiers')
+  const [vma, setVma] = useState(profile?.vma ?? 16)
   const [showAddSession, setShowAddSession] = useState(false)
   const [validatingId, setValidatingId] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
+  const [showAddComp, setShowAddComp] = useState(false)
+  const [newCompTitle, setNewCompTitle] = useState('')
+  const [newCompDate, setNewCompDate] = useState('')
+  const [newCompDistance, setNewCompDistance] = useState('')
+  const [newCompTarget, setNewCompTarget] = useState('')
+  const [savingComp, setSavingComp] = useState(false)
+
+  const { data: competitions, refetch: refetchCompetitions } = useQuery<Competition[]>(
+    () => (profile ? fetchCompetitions(profile.id) : Promise.resolve([])),
+    [profile?.id],
+  )
+
+  function handleVmaChange(next: number) {
+    setVma(next)
+    if (profile) updateVma(profile.id, next)
+  }
+
+  async function handleAddCompetition(kind: 'competition' | 'objective') {
+    if (!profile || !newCompTitle.trim()) return
+    setSavingComp(true)
+    try {
+      await createCompetition(profile.id, {
+        kind,
+        title: newCompTitle.trim(),
+        event_date: newCompDate || null,
+        distance_km: newCompDistance ? parseFloat(newCompDistance) : null,
+        target_time: newCompTarget || null,
+      })
+      setNewCompTitle(''); setNewCompDate(''); setNewCompDistance(''); setNewCompTarget('')
+      setShowAddComp(false)
+      await refetchCompetitions()
+    } finally {
+      setSavingComp(false)
+    }
+  }
+
+  async function handleDeleteCompetition(id: string) {
+    await deleteCompetition(id)
+    await refetchCompetitions()
+  }
+
+  async function handleToggleObjective(id: string, done: boolean) {
+    await toggleCompetitionDone(id, done)
+    await refetchCompetitions()
+  }
 
   const { data: stravaStatus, refetch: refetchStravaStatus } = useQuery(() => fetchStravaStatus(), [])
   const { data: stravaActivities, refetch: refetchStravaActivities } = useQuery<StravaActivity[]>(
@@ -210,11 +154,6 @@ export default function TrainingScreen() {
   const cells: Array<number | null> = []
   for (let i = 0; i < startOffset; i++) cells.push(null)
   for (let d = 1; d <= daysInMonth; d++) cells.push(d)
-
-  const chartData = crossTab === 'vélo' ? VELO_CHART : crossTab === 'natation' ? NATA_CHART : ABDOS_CHART
-  const chartColor = crossTab === 'vélo' ? '#F2C400' : crossTab === 'natation' ? '#5B91D8' : '#E4574A'
-
-  const addLabel = { vélo: 'Ajouter une séance vélo', natation: 'Ajouter une séance natation', abdos: 'Ajouter une séance abdos' }[crossTab]
 
   return (
     <div className="p-4 space-y-4 max-w-2xl mx-auto pb-8">
@@ -385,45 +324,79 @@ export default function TrainingScreen() {
             ))}
           </div>
 
+          {showAddComp && (
+            <div className="mb-4 p-3 rounded-xl space-y-2" style={{ background: 'var(--surface2)' }}>
+              <input value={newCompTitle} onChange={(e) => setNewCompTitle(e.target.value)}
+                placeholder={compTab === 'comp' ? 'Ex: 10km de Paris' : 'Ex: Passer sous 40min au 10km'}
+                className="w-full rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+              <div className="grid grid-cols-3 gap-2">
+                <input type="date" value={newCompDate} onChange={(e) => setNewCompDate(e.target.value)}
+                  className="rounded-[10px] px-2 py-2 text-xs outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+                <input value={newCompDistance} onChange={(e) => setNewCompDistance(e.target.value)} placeholder="Distance km"
+                  className="rounded-[10px] px-2 py-2 text-xs outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+                <input value={newCompTarget} onChange={(e) => setNewCompTarget(e.target.value)} placeholder="Objectif chrono"
+                  className="rounded-[10px] px-2 py-2 text-xs outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => handleAddCompetition(compTab === 'comp' ? 'competition' : 'objective')}
+                  disabled={savingComp || !newCompTitle.trim()}
+                  className="text-xs font-bold px-3 py-1.5 rounded-[10px] disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+                  {savingComp ? '…' : 'Ajouter'}
+                </button>
+                <button onClick={() => setShowAddComp(false)} className="text-xs font-semibold px-3 py-1.5 rounded-[10px]" style={{ color: 'var(--text-2)' }}>Annuler</button>
+              </div>
+            </div>
+          )}
+
           {compTab === 'comp' ? (
             <>
-              {COMPETITIONS.map((c, i) => (
-                <div key={i} className="flex items-center gap-3 py-3 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
-                  <div className="w-10 h-10 rounded-full flex flex-col items-center justify-center shrink-0"
-                    style={{ background: 'var(--surface2)', border: '2px solid #F2C400' }}>
-                    <span className="text-[10px] font-black text-[#F2C400]">J{c.daysLeft}</span>
+              {competitions?.filter((c) => c.kind === 'competition').length === 0 && !showAddComp && (
+                <p className="text-sm py-3" style={{ color: 'var(--text-2)' }}>Aucune compétition programmée.</p>
+              )}
+              {competitions?.filter((c) => c.kind === 'competition').map((c) => {
+                const daysLeft = c.event_date ? Math.max(0, Math.ceil((new Date(c.event_date).getTime() - now.getTime()) / 86400000)) : null
+                return (
+                  <div key={c.id} className="flex items-center gap-3 py-3 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
+                    <div className="w-10 h-10 rounded-full flex flex-col items-center justify-center shrink-0"
+                      style={{ background: 'var(--surface2)', border: '2px solid #F2C400' }}>
+                      <span className="text-[10px] font-black text-[#F2C400]">{daysLeft !== null ? `J${daysLeft}` : '—'}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>{c.title}</p>
+                      <p className="text-xs" style={{ color: 'var(--text-2)' }}>
+                        {c.event_date ? new Date(c.event_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : ''}
+                        {c.distance_km ? ` · ${c.distance_km} km` : ''}{c.target_time ? ` · ${c.target_time}` : ''}
+                      </p>
+                    </div>
+                    <button onClick={() => handleDeleteCompetition(c.id)} className="text-xs font-semibold text-[#E4574A]">supprimer</button>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>{c.name}</p>
-                    <p className="text-xs" style={{ color: 'var(--text-2)' }}>{c.date}</p>
-                  </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(94,186,101,0.15)', color: '#5EBA65' }}>{c.type}</span>
-                  <button className="text-xs font-semibold text-[#E4574A]">supprimer</button>
-                </div>
-              ))}
-              <button className="mt-3 text-sm font-semibold text-[#F2C400] flex items-center gap-1.5">
+                )
+              })}
+              <button onClick={() => setShowAddComp(true)} className="mt-3 text-sm font-semibold text-[#F2C400] flex items-center gap-1.5">
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1.5V10.5M1.5 6H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
                 Ajouter une compétition
               </button>
             </>
           ) : (
             <>
-              {[
-                { label: 'Passer sous 14\'00 au 5000m', deadline: '26 sept', color: '#F2C400', done: false },
-                { label: 'Courir 80 km/semaine', deadline: 'Fin saison', color: '#5B91D8', done: true },
-              ].map((obj, i) => (
-                <div key={i} className="flex items-start gap-3 py-3 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
-                  <div className="w-5 h-5 rounded-full mt-0.5 flex items-center justify-center shrink-0"
-                    style={{ background: obj.done ? 'rgba(94,186,101,0.2)' : obj.color + '22', border: `1.5px solid ${obj.done ? '#5EBA65' : obj.color}` }}>
+              {competitions?.filter((c) => c.kind === 'objective').length === 0 && !showAddComp && (
+                <p className="text-sm py-3" style={{ color: 'var(--text-2)' }}>Aucun objectif pour l'instant.</p>
+              )}
+              {competitions?.filter((c) => c.kind === 'objective').map((obj) => (
+                <div key={obj.id} className="flex items-start gap-3 py-3 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
+                  <button onClick={() => handleToggleObjective(obj.id, !obj.done)}
+                    className="w-5 h-5 rounded-full mt-0.5 flex items-center justify-center shrink-0"
+                    style={{ background: obj.done ? 'rgba(94,186,101,0.2)' : 'rgba(242,196,0,0.15)', border: `1.5px solid ${obj.done ? '#5EBA65' : '#F2C400'}` }}>
                     {obj.done && <svg width="8" height="6" viewBox="0 0 8 6" fill="none"><path d="M1 3L3 5L7 1" stroke="#5EBA65" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
-                  </div>
+                  </button>
                   <div className="flex-1">
-                    <p className="text-sm font-semibold" style={{ color: obj.done ? 'var(--text-2)' : 'var(--text-1)', textDecoration: obj.done ? 'line-through' : 'none' }}>{obj.label}</p>
-                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>Échéance : {obj.deadline}</p>
+                    <p className="text-sm font-semibold" style={{ color: obj.done ? 'var(--text-2)' : 'var(--text-1)', textDecoration: obj.done ? 'line-through' : 'none' }}>{obj.title}</p>
+                    {obj.event_date && <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>Échéance : {new Date(obj.event_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</p>}
                   </div>
+                  <button onClick={() => handleDeleteCompetition(obj.id)} className="text-xs font-semibold text-[#E4574A] shrink-0">supprimer</button>
                 </div>
               ))}
-              <button className="mt-3 text-sm font-semibold text-[#F2C400] flex items-center gap-1.5">
+              <button onClick={() => setShowAddComp(true)} className="mt-3 text-sm font-semibold text-[#F2C400] flex items-center gap-1.5">
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1.5V10.5M1.5 6H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
                 Ajouter un objectif
               </button>
@@ -439,43 +412,9 @@ export default function TrainingScreen() {
           <SectionLabel>Croisé</SectionLabel>
         </div>
         <Card>
-          <div className="flex gap-1 mb-4 p-0.5 rounded-2xl w-fit" style={{ background: 'var(--surface2)' }}>
-            {([
-              { id: 'vélo' as const,     icon: '🚴', label: 'Vélo' },
-              { id: 'natation' as const, icon: '🏊', label: 'Natation' },
-              { id: 'abdos' as const,    icon: '💪', label: 'Abdos' },
-            ]).map((t) => (
-              <button key={t.id} onClick={() => setCrossTab(t.id)}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all"
-                style={{
-                  background: crossTab === t.id ? 'var(--card)' : 'transparent',
-                  color: crossTab === t.id ? 'var(--text-1)' : 'var(--text-2)',
-                  boxShadow: crossTab === t.id ? '0 1px 4px rgba(0,0,0,0.12)' : 'none',
-                }}>
-                {t.icon} {t.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="space-y-0">
-            {CROSS[crossTab].map((item, i) => (
-              <div key={i} className="flex items-center justify-between py-2.5 border-b" style={{ borderColor: 'var(--border)' }}>
-                <span className="text-sm" style={{ color: 'var(--text-2)' }}>{item.date}</span>
-                <span className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>
-                  {item.dist !== '—' ? item.dist + ' · ' : ''}{item.dur}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-4">
-            <AreaChart data={chartData} color={chartColor} />
-          </div>
-
-          <button className="mt-3 text-sm font-semibold text-[#F2C400] flex items-center gap-1.5">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1.5V10.5M1.5 6H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-            {addLabel}
-          </button>
+          <p className="text-sm text-center py-6" style={{ color: 'var(--text-2)' }}>
+            Le suivi vélo/natation/gainage arrive dans une prochaine version.
+          </p>
         </Card>
       </div>
 
@@ -509,20 +448,18 @@ export default function TrainingScreen() {
               {/* VMA stepper */}
               <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-2)' }}>VMA (modifiable)</p>
               <div className="flex items-center gap-4 mb-1">
-                <button onClick={() => setVma(v => Math.max(10, v - 0.5))}
+                <button onClick={() => handleVmaChange(Math.max(10, vma - 0.5))}
                   className="w-9 h-9 rounded-xl text-lg font-bold flex items-center justify-center transition-all active:scale-95"
                   style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>−</button>
                 <div className="flex-1 text-center">
                   <span className="text-4xl font-black" style={{ color: 'var(--text-1)' }}>{vma}</span>
                   <span className="text-sm font-semibold ml-1.5" style={{ color: 'var(--text-2)' }}>km/h</span>
                 </div>
-                <button onClick={() => setVma(v => Math.min(30, v + 0.5))}
+                <button onClick={() => handleVmaChange(Math.min(30, vma + 0.5))}
                   className="w-9 h-9 rounded-xl text-lg font-bold flex items-center justify-center transition-all active:scale-95"
                   style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>+</button>
               </div>
-              <button className="text-xs font-semibold text-[#F2C400] flex items-center gap-1 mb-5">
-                🥇 Voir la fiche FFA →
-              </button>
+              <p className="text-xs mb-5" style={{ color: 'var(--text-2)' }}>Enregistrée sur ton profil, utilisée par ton coach pour calculer tes allures.</p>
 
               {/* Temps de passage table */}
               <p className="text-base font-bold mb-3" style={{ color: 'var(--text-1)' }}>Temps de passage</p>
@@ -551,55 +488,9 @@ export default function TrainingScreen() {
               </div>
             </>
           ) : (
-            <>
-              {/* Musculation groups */}
-              {MUSC_GROUPS.map((group) => (
-                <div key={group.title} className="mb-5 last:mb-0">
-                  <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-2)' }}>{group.title}</p>
-                  <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-                    {group.exercises.map((ex, i) => {
-                      const kg = muscKg[ex]
-                      const isActive = activeExercise === ex
-                      return (
-                        <div key={ex}>
-                          <div className="flex items-center px-4 py-3 border-b last:border-b-0 transition-colors cursor-pointer"
-                            style={{ borderColor: 'var(--border)', background: isActive ? 'rgba(242,196,0,0.06)' : 'transparent' }}
-                            onClick={() => setActiveExercise(isActive ? null : ex)}>
-                            <span className="flex-1 text-sm font-semibold" style={{ color: isActive ? '#F2C400' : 'var(--text-1)' }}>{ex}</span>
-                            {kg !== undefined ? (
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="number"
-                                  value={kg}
-                                  onClick={e => e.stopPropagation()}
-                                  onChange={e => setMuscKg(prev => ({ ...prev, [ex]: Number(e.target.value) }))}
-                                  className="w-16 text-right text-sm font-bold rounded-lg px-2 py-1 outline-none"
-                                  style={{ background: 'var(--surface2)', color: '#F2C400', border: 'none' }}
-                                />
-                                <span className="text-xs" style={{ color: 'var(--text-2)' }}>kg</span>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-bold" style={{ color: 'var(--text-2)' }}>—</span>
-                                <span className="text-xs" style={{ color: 'var(--text-2)' }}>kg</span>
-                                <button onClick={e => { e.stopPropagation(); setMuscKg(prev => ({ ...prev, [ex]: 60 })) }}
-                                  className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                                  style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>Saisir</button>
-                              </div>
-                            )}
-                          </div>
-                          {isActive && kg !== undefined && (
-                            <div className="px-4 pb-4">
-                              <ChargesTable exercise={ex} maxKg={kg} />
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              ))}
-            </>
+            <p className="text-sm text-center py-6" style={{ color: 'var(--text-2)' }}>
+              Le suivi musculation arrive dans une prochaine version.
+            </p>
           )}
         </Card>
       </div>

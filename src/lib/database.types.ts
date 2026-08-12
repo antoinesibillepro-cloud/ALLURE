@@ -70,6 +70,50 @@ export type Database = {
         }
         Relationships: []
       }
+      competitions: {
+        Row: {
+          created_at: string
+          distance_km: number | null
+          done: boolean
+          event_date: string | null
+          id: string
+          kind: Database["public"]["Enums"]["competition_kind"]
+          profile_id: string
+          target_time: string | null
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          distance_km?: number | null
+          done?: boolean
+          event_date?: string | null
+          id?: string
+          kind: Database["public"]["Enums"]["competition_kind"]
+          profile_id: string
+          target_time?: string | null
+          title: string
+        }
+        Update: {
+          created_at?: string
+          distance_km?: number | null
+          done?: boolean
+          event_date?: string | null
+          id?: string
+          kind?: Database["public"]["Enums"]["competition_kind"]
+          profile_id?: string
+          target_time?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "competitions_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversation_participants: {
         Row: {
           conversation_id: string
@@ -265,6 +309,44 @@ export type Database = {
           },
         ]
       }
+      injuries: {
+        Row: {
+          created_at: string
+          date: string
+          duration_text: string | null
+          id: string
+          profile_id: string
+          severity: Database["public"]["Enums"]["injury_severity"]
+          type: string
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          duration_text?: string | null
+          id?: string
+          profile_id: string
+          severity?: Database["public"]["Enums"]["injury_severity"]
+          type: string
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          duration_text?: string | null
+          id?: string
+          profile_id?: string
+          severity?: Database["public"]["Enums"]["injury_severity"]
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "injuries_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           body: string
@@ -349,6 +431,7 @@ export type Database = {
           ffa_licence_url: string | null
           id: string
           name: string
+          notification_prefs: Json
           role: Database["public"]["Enums"]["user_role"]
           vma: number | null
         }
@@ -361,6 +444,7 @@ export type Database = {
           ffa_licence_url?: string | null
           id: string
           name: string
+          notification_prefs?: Json
           role?: Database["public"]["Enums"]["user_role"]
           vma?: number | null
         }
@@ -373,6 +457,7 @@ export type Database = {
           ffa_licence_url?: string | null
           id?: string
           name?: string
+          notification_prefs?: Json
           role?: Database["public"]["Enums"]["user_role"]
           vma?: number | null
         }
@@ -621,6 +706,32 @@ export type Database = {
           },
         ]
       }
+      weight_logs: {
+        Row: {
+          date: string
+          profile_id: string
+          weight_kg: number
+        }
+        Insert: {
+          date: string
+          profile_id: string
+          weight_kg: number
+        }
+        Update: {
+          date?: string
+          profile_id?: string
+          weight_kg?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "weight_logs_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -638,8 +749,10 @@ export type Database = {
       }
     }
     Enums: {
+      competition_kind: "competition" | "objective"
       completion_status: "done" | "skipped" | "free_session"
       conversation_kind: "dm" | "group" | "announcement"
+      injury_severity: "légère" | "modérée" | "grave"
       session_status: "draft" | "published"
       user_role: "athlete" | "coach"
     }
@@ -769,8 +882,10 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      competition_kind: ["competition", "objective"],
       completion_status: ["done", "skipped", "free_session"],
       conversation_kind: ["dm", "group", "announcement"],
+      injury_severity: ["légère", "modérée", "grave"],
       session_status: ["draft", "published"],
       user_role: ["athlete", "coach"],
     },
