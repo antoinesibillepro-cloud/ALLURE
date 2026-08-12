@@ -110,6 +110,93 @@ export type Database = {
           },
         ]
       }
+      club_race_assignments: {
+        Row: {
+          created_at: string
+          discipline: string
+          id: string
+          profile_id: string
+          race_id: string
+          target_time: string | null
+        }
+        Insert: {
+          created_at?: string
+          discipline: string
+          id?: string
+          profile_id: string
+          race_id: string
+          target_time?: string | null
+        }
+        Update: {
+          created_at?: string
+          discipline?: string
+          id?: string
+          profile_id?: string
+          race_id?: string
+          target_time?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "club_race_assignments_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "club_race_assignments_race_id_fkey"
+            columns: ["race_id"]
+            isOneToOne: false
+            referencedRelation: "club_races"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      club_races: {
+        Row: {
+          club_id: string
+          created_at: string
+          created_by: string
+          event_date: string
+          id: string
+          location: string | null
+          title: string
+        }
+        Insert: {
+          club_id: string
+          created_at?: string
+          created_by: string
+          event_date: string
+          id?: string
+          location?: string | null
+          title: string
+        }
+        Update: {
+          club_id?: string
+          created_at?: string
+          created_by?: string
+          event_date?: string
+          id?: string
+          location?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "club_races_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "club_races_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clubs: {
         Row: {
           created_at: string
@@ -842,6 +929,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      am_participant: { Args: { conv_id: string }; Returns: boolean }
       is_group_member: { Args: { gid: string }; Returns: boolean }
       join_club_with_invite: {
         Args: { display_name: string; invite_code: string }

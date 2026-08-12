@@ -89,8 +89,7 @@ export default function CoachMessaging() {
   }
 
   function convTitle(c: ConversationSummary) {
-    if (c.title) return c.kind === 'announcement' ? `📢 ${c.title}` : `🏃 ${c.title}`
-    return 'Conversation'
+    return c.title || 'Conversation'
   }
 
   const ConvList = () => (
@@ -167,7 +166,9 @@ export default function CoachMessaging() {
           <div className="flex items-center justify-center h-32 text-sm" style={{ color: 'var(--text-2)' }}>Sélectionne une conversation</div>
         ) : !messages?.length ? (
           <div className="flex flex-col items-center justify-center h-32 gap-2">
-            <span className="text-3xl">💬</span>
+            <svg width="28" height="28" viewBox="0 0 20 20" fill="none">
+              <path d="M17 3H3C2.4 3 2 3.4 2 4V13C2 13.6 2.4 14 3 14H8L10 17.5L12 14H17C17.6 14 18 13.6 18 13V4C18 3.4 17.6 3 17 3Z" stroke="var(--text-2)" strokeWidth="1.3" strokeLinejoin="round" />
+            </svg>
             <p className="text-sm" style={{ color: 'var(--text-2)' }}>Aucun message pour le moment</p>
           </div>
         ) : (
@@ -236,7 +237,7 @@ export default function CoachMessaging() {
             <div>
               <label className="text-[10px] uppercase tracking-widest mb-2 block" style={{ color: 'var(--text-2)' }}>Type</label>
               <div className="flex gap-2">
-                {[{ label: '📢 Annonce club', key: 'announcement' as const }, { label: '🏃 Groupe', key: 'group' as const }].map(({ label, key }) => (
+                {[{ label: 'Annonce club', key: 'announcement' as const }, { label: 'Groupe', key: 'group' as const }].map(({ label, key }) => (
                   <button key={key} onClick={() => setBroadcastKind(key)} className="flex-1 py-2 rounded-[12px] text-xs font-bold"
                     style={{ background: broadcastKind === key ? '#F2C400' : 'var(--surface2)', color: broadcastKind === key ? '#0E0E0D' : 'var(--text-2)' }}>
                     {label}

@@ -2,12 +2,13 @@ import { useState } from 'react'
 import { Card } from '../components/ui'
 import { useApp } from '../context/AppContext'
 import { useQuery } from '../lib/useQuery'
-import { fetchAthleteWeekStats, fetchWellnessAverages, fetchWeeklyStreak } from '../lib/queries/stats'
+import { fetchAthleteWeekStats, fetchWellnessAverages, fetchWeeklyStreak, fetchAveragePace } from '../lib/queries/stats'
 import { fetchWeightLogs, type WeightLog } from '../lib/queries/profileExtras'
 import { fetchDisciplineBreakdown, fetchWeeklyLoad, type DisciplineBreakdown } from '../lib/queries/crossTraining'
 import {
   fetchPersonalRecords, createPersonalRecord, updatePersonalRecord, deletePersonalRecord, type PersonalRecord,
 } from '../lib/queries/profileExtras'
+import { DonutChart, LoadChart } from '../components/charts'
 
 function startOfWeek(d: Date) {
   const day = (d.getDay() + 6) % 7
@@ -57,74 +58,15 @@ function WeightMiniChart({ logs }: { logs: WeightLog[] }) {
 }
 
 // ── Wellness bar ──────────────────────────────────────────────────────────────
-function WellnessBar({ icon, label, value, max, color }: { icon: string; label: string; value: number; max: number; color: string }) {
-  const w = (value / max) * 100
+function WellnessBar({ label, value, max, unit, color }: { label: string; value: number; max: number; unit: string; color: string }) {
+  const w = Math.min(100, (value / max) * 100)
   return (
     <div className="flex items-center gap-3 py-2.5" style={{ borderBottom: '1px solid var(--border)' }}>
-      <span className="text-base w-5 text-center">{icon}</span>
       <span className="text-sm w-24 shrink-0" style={{ color: 'var(--text-1)' }}>{label}</span>
       <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'var(--surface2)' }}>
         <div className="h-full rounded-full transition-all duration-700 ease-out" style={{ width: `${w}%`, background: color }} />
       </div>
-      <span className="text-sm font-bold w-10 text-right" style={{ color: 'var(--text-1)' }}>{value.toFixed(1)}/{max}</span>
-    </div>
-  )
-}
-
-const DISC_COLORS: Record<string, string> = {
-  'Course à pied': '#F2C400', 'Vélo': '#5B91D8', 'Natation': '#7B6FD6', 'Musculation': '#E4574A', 'Gainage': '#5EBA65',
-}
-
-function DonutChart({ segments }: { segments: DisciplineBreakdown[] }) {
-  const R = 64, CX = 80, CY = 80, STROKE = 22
-  const circ = 2 * Math.PI * R
-  const total = segments.reduce((s, d) => s + d.sessions, 0)
-  let acc = 0
-  const segs = segments.map((s) => {
-    const pct = total > 0 ? s.sessions / total : 0
-    const dash = pct * circ
-    const seg = { ...s, dash: Math.max(dash - 3, 0), offset: acc, pct: Math.round(pct * 100) }
-    acc += dash
-    return seg
-  })
-  return (
-    <div className="flex items-center gap-5">
-      <div className="relative shrink-0 flex items-center justify-center" style={{ width: 160, height: 160 }}>
-        <svg width={160} height={160} style={{ transform: 'rotate(-90deg)' }}>
-          <circle cx={CX} cy={CY} r={R} fill="none" stroke="var(--surface2)" strokeWidth={STROKE} />
-          {segs.map((s, i) => (
-            <circle key={i} cx={CX} cy={CY} r={R} fill="none" stroke={DISC_COLORS[s.discipline] ?? '#999'} strokeWidth={STROKE}
-              strokeDasharray={`${s.dash} ${circ - s.dash}`} strokeDashoffset={-s.offset} strokeLinecap="round" />
-          ))}
-        </svg>
-        <div className="absolute text-center">
-          <p className="text-3xl font-black leading-none" style={{ color: 'var(--text-1)' }}>{total}</p>
-          <p className="text-[9px] mt-1 font-semibold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>séances</p>
-        </div>
-      </div>
-      <div className="flex-1 space-y-2">
-        {segs.map((s) => (
-          <div key={s.discipline} className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full shrink-0" style={{ background: DISC_COLORS[s.discipline] ?? '#999' }} />
-            <span className="text-xs flex-1 truncate" style={{ color: 'var(--text-2)' }}>{s.discipline}</span>
-            <span className="text-xs font-black" style={{ color: 'var(--text-1)' }}>{s.pct}%</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function LoadChart({ data }: { data: { label: string; load: number }[] }) {
-  const max = Math.max(...data.map((d) => d.load), 1)
-  return (
-    <div className="flex items-end gap-1.5" style={{ height: 100 }}>
-      {data.map((d, i) => (
-        <div key={i} className="flex-1 flex flex-col items-center gap-1">
-          <div className="w-full rounded-t-sm" style={{ height: `${(d.load / max) * 76}px`, minHeight: d.load > 0 ? 3 : 0, background: i === data.length - 1 ? '#F2C400' : 'var(--surface3)' }} />
-          <span className="text-[8px]" style={{ color: 'var(--text-2)' }}>{d.label}</span>
-        </div>
-      ))}
+      <span className="text-sm font-bold w-14 text-right" style={{ color: 'var(--text-1)' }}>{value.toFixed(1)}{unit}</span>
     </div>
   )
 }
@@ -173,6 +115,28 @@ export default function StatsScreen() {
     () => (profile ? fetchWeeklyLoad(profile.id) : Promise.resolve([])),
     [profile?.id],
   )
+
+  const monthStart = isoDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1))
+  const nextMonthStart = isoDate(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1))
+  const { data: monthStats } = useQuery(
+    () => (profile ? fetchAthleteWeekStats(profile.id, monthStart, nextMonthStart) : Promise.resolve(null)),
+    [profile?.id, monthStart],
+  )
+  const prevWeekStart = isoDate(new Date(startOfWeek(new Date()).getTime() - 7 * 24 * 3600 * 1000))
+  const { data: prevWeekStats } = useQuery(
+    () => (profile ? fetchAthleteWeekStats(profile.id, prevWeekStart, weekStart) : Promise.resolve(null)),
+    [profile?.id, prevWeekStart],
+  )
+  const { data: avgPace } = useQuery(
+    () => (profile ? fetchAveragePace(profile.id, monthStart, nextMonthStart) : Promise.resolve(null)),
+    [profile?.id, monthStart],
+  )
+  function paceStr(minPerKm: number) {
+    const m = Math.floor(minPerKm)
+    const s = Math.round((minPerKm - m) * 60)
+    return `${m}'${s.toString().padStart(2, '0')}"`
+  }
+  const weekKmDelta = weekStats && prevWeekStats ? weekStats.kmDone - prevWeekStats.kmDone : null
 
   async function addRecord() {
     if (!profile || !newDist.trim() || !newTime.trim()) return
@@ -241,18 +205,25 @@ export default function StatsScreen() {
               <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Pas encore de bilan de forme enregistré.</p>
             ) : (
               <>
-                <WellnessBar icon="😴" label="Sommeil" value={wellness.sleep} max={5} color="#5B91D8" />
-                <WellnessBar icon="⚡" label="Courbatures" value={wellness.soreness} max={5} color="#E4574A" />
-                <WellnessBar icon="🔋" label="Fatigue" value={wellness.fatigue} max={5} color="#7B6FD6" />
-                <WellnessBar icon="🧠" label="Stress" value={wellness.stress} max={5} color="#F97316" />
-                <WellnessBar icon="🔥" label="Motivation" value={wellness.motivation} max={5} color="#5EBA65" />
+                <WellnessBar label="Sommeil" value={wellness.sleep} max={10} unit="h" color="#5B91D8" />
+                <WellnessBar label="Courbatures" value={wellness.soreness} max={10} unit="/10" color="#E4574A" />
+                <WellnessBar label="Fatigue" value={wellness.fatigue} max={10} unit="/10" color="#7B6FD6" />
+                <WellnessBar label="Stress" value={wellness.stress} max={10} unit="/10" color="#F97316" />
+                <WellnessBar label="Motivation" value={wellness.motivation} max={10} unit="/10" color="#5EBA65" />
               </>
             )}
           </Card>
 
           {/* Cette semaine */}
           <Card>
-            <p className="text-sm font-semibold mb-3" style={{ color: 'var(--text-1)' }}>Cette semaine</p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>Cette semaine</p>
+              {weekKmDelta !== null && weekKmDelta !== 0 && (
+                <span className="text-xs font-bold" style={{ color: weekKmDelta > 0 ? '#5EBA65' : '#E4574A' }}>
+                  {weekKmDelta > 0 ? '↑' : '↓'} {Math.abs(weekKmDelta).toFixed(1)} km vs sem. dernière
+                </span>
+              )}
+            </div>
             <div className="flex gap-6">
               <div>
                 <p className="text-xs mb-0.5" style={{ color: 'var(--text-2)' }}>Distance</p>
@@ -261,6 +232,25 @@ export default function StatsScreen() {
               <div>
                 <p className="text-xs mb-0.5" style={{ color: 'var(--text-2)' }}>Séances</p>
                 <p className="text-xl font-bold" style={{ color: 'var(--text-1)' }}>{weekStats?.sessionsDone ?? 0} <span className="text-sm font-normal">/ {weekStats?.sessionsPlanned ?? 0}</span></p>
+              </div>
+            </div>
+          </Card>
+
+          {/* Ce mois */}
+          <Card>
+            <p className="text-sm font-semibold mb-3" style={{ color: 'var(--text-1)' }}>Ce mois-ci</p>
+            <div className="flex gap-6">
+              <div>
+                <p className="text-xs mb-0.5" style={{ color: 'var(--text-2)' }}>Distance</p>
+                <p className="text-xl font-bold" style={{ color: 'var(--text-1)' }}>{Math.round(monthStats?.kmDone ?? 0)}<span className="text-sm font-normal ml-0.5">km</span></p>
+              </div>
+              <div>
+                <p className="text-xs mb-0.5" style={{ color: 'var(--text-2)' }}>Séances</p>
+                <p className="text-xl font-bold" style={{ color: 'var(--text-1)' }}>{monthStats?.sessionsDone ?? 0}</p>
+              </div>
+              <div>
+                <p className="text-xs mb-0.5" style={{ color: 'var(--text-2)' }}>Allure moyenne</p>
+                <p className="text-xl font-bold" style={{ color: 'var(--text-1)' }}>{avgPace ? `${paceStr(avgPace)}/km` : '—'}</p>
               </div>
             </div>
           </Card>
@@ -315,7 +305,9 @@ export default function StatsScreen() {
         <div className="p-4 space-y-3">
           <Card>
             <div className="flex items-center gap-2 mb-4">
-              <span className="text-lg">🏆</span>
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+                <path d="M10 2L12.5 7.5H18L13.5 11L15.5 17L10 13.5L4.5 17L6.5 11L2 7.5H7.5L10 2Z" fill="#F2C400" />
+              </svg>
               <p className="text-base font-bold" style={{ color: 'var(--text-1)' }}>Records personnels</p>
             </div>
 

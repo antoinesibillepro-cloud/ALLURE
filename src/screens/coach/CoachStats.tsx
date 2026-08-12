@@ -83,8 +83,9 @@ export default function CoachStats() {
             {topAthletes.map((a, i) => (
               <div key={a.name + i} className="flex items-center gap-3 py-3"
                 style={{ borderBottom: i < topAthletes.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                <span className="text-xl font-black w-8 text-center" style={{ color: i < 3 ? '#F2C400' : 'var(--text-2)' }}>
-                  {i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}
+                <span className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-black shrink-0"
+                  style={{ background: i < 3 ? 'rgba(242,196,0,0.15)' : 'var(--surface2)', color: i < 3 ? '#F2C400' : 'var(--text-2)' }}>
+                  {i + 1}
                 </span>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>{a.name}</p>

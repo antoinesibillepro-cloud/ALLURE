@@ -57,7 +57,11 @@ function FeedbackSlide() {
   const [sent, setSent] = useState(false)
   if (sent) return (
     <div className="mt-6 flex flex-col items-start gap-2">
-      <div className="text-3xl">🙏</div>
+      <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: 'rgba(242,196,0,0.15)' }}>
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+          <path d="M2 11L7 15L18 4" stroke="#F2C400" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </div>
       <p className="text-white font-bold text-lg">Merci pour ton retour !</p>
       <p className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>Ça aide vraiment à améliorer l'appli.</p>
     </div>

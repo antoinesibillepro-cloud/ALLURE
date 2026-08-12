@@ -8,6 +8,8 @@ import { fetchAthleteSessions, validateSession, logFreeSession, type AthleteSess
 import { fetchTodayCheckin, saveCheckin, type DailyCheckin } from '../lib/queries/checkins'
 import { fetchAthleteWeekStats, fetchAthleteTotalKm, fetchLastActivity } from '../lib/queries/stats'
 import { fetchNextCompetition, fetchMyGroups, fetchWeightLogs, saveWeightLog, type WeightLog } from '../lib/queries/profileExtras'
+import { fetchDisciplineBreakdown, fetchWeeklyLoad, type DisciplineBreakdown } from '../lib/queries/crossTraining'
+import { DonutChart, LoadChart } from '../components/charts'
 
 function startOfWeek(d: Date) {
   const day = (d.getDay() + 6) % 7 // Monday = 0
@@ -163,7 +165,7 @@ export default function HomeScreen() {
   const athleteName = profile?.name ?? ''
   const initials = athleteName.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
   const [selectedDay, setSelectedDay] = useState((new Date().getDay() + 6) % 7)
-  const [form, setForm] = useState<Record<FormKey, number>>({ sleep: 6, motivation: 8, fatigue: 4, soreness: 2, stress: 4 })
+  const [form, setForm] = useState<Record<FormKey, number>>({ sleep: 7.5, motivation: 8, fatigue: 4, soreness: 2, stress: 4 })
   const [formSent, setFormSent] = useState(false)
   const [showRecap, setShowRecap] = useState(false)
   const [showAddSession, setShowAddSession] = useState(false)
@@ -237,6 +239,16 @@ export default function HomeScreen() {
     ? Math.max(0, Math.ceil((new Date(nextComp.event_date).getTime() - today.getTime()) / 86400000))
     : null
 
+  const monthAgo = new Date(today.getTime() - 30 * 86400000).toISOString()
+  const { data: breakdown } = useQuery<DisciplineBreakdown[]>(
+    () => (profile ? fetchDisciplineBreakdown(profile.id, monthAgo, today.toISOString()) : Promise.resolve([])),
+    [profile?.id],
+  )
+  const { data: load } = useQuery(
+    () => (profile ? fetchWeeklyLoad(profile.id) : Promise.resolve([])),
+    [profile?.id],
+  )
+
   const [showRpe, setShowRpe] = useState(false)
 
   async function handleValidateSession(rpe: number) {
@@ -250,6 +262,26 @@ export default function HomeScreen() {
       setValidating(false)
     }
   }
+
+  const overviewBlock = (
+    <div className="space-y-4">
+      <Card>
+        <SectionLabel>Répartition · 30 derniers jours</SectionLabel>
+        <div className="mt-3">
+          {!breakdown?.length ? (
+            <p className="text-sm py-2" style={{ color: 'var(--text-2)' }}>Aucune séance enregistrée sur les 30 derniers jours.</p>
+          ) : (
+            <DonutChart segments={breakdown} />
+          )}
+        </div>
+      </Card>
+      <Card>
+        <SectionLabel>Charge d&apos;entraînement</SectionLabel>
+        <p className="text-xs mb-3 mt-0.5" style={{ color: 'var(--text-2)' }}>RPE × durée · 8 dernières semaines</p>
+        {load && load.length > 0 ? <LoadChart data={load} /> : <p className="text-sm py-2" style={{ color: 'var(--text-2)' }}>Pas encore de données de charge.</p>}
+      </Card>
+    </div>
+  )
 
   const RPE_OPTIONS = [{ v: 2, l: 'Facile' }, { v: 4, l: 'Modéré' }, { v: 6, l: 'Soutenu' }, { v: 8, l: 'Dur' }, { v: 10, l: 'Max' }]
   function RpePicker() {
@@ -354,7 +386,22 @@ export default function HomeScreen() {
     <Card>
       <SectionLabel>Bilan de forme — Aujourd&apos;hui</SectionLabel>
       <div className="space-y-4">
-        {FORM_FIELDS.map(({ key, label, icon, color }) => {
+        <div className="flex items-center gap-3">
+          <div className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0" style={{ background: '#5B91D818' }}>
+            <IcSleep color="#5B91D8" />
+          </div>
+          <span className="text-sm w-24 shrink-0" style={{ color: 'var(--text-2)' }}>Sommeil</span>
+          <div className="flex-1 flex items-center justify-end gap-3">
+            <button onClick={() => setForm((p) => ({ ...p, sleep: Math.max(0, p.sleep - 0.5) }))}
+              className="w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
+              style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>−</button>
+            <span className="text-sm font-bold tabular-nums" style={{ color: '#5B91D8' }}>{form.sleep}h</span>
+            <button onClick={() => setForm((p) => ({ ...p, sleep: Math.min(14, p.sleep + 0.5) }))}
+              className="w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
+              style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>+</button>
+          </div>
+        </div>
+        {FORM_FIELDS.filter((f) => f.key !== 'sleep').map(({ key, label, icon, color }) => {
           const val = form[key]
           return (
             <div key={key} className="flex items-center gap-3">
@@ -364,7 +411,7 @@ export default function HomeScreen() {
               </div>
               <span className="text-sm w-24 shrink-0" style={{ color: 'var(--text-2)' }}>{label}</span>
               <FormSegment value={val} onChange={(v) => setForm((p) => ({ ...p, [key]: v }))} color={color} />
-              <span className="text-sm font-bold w-4 text-right shrink-0 tabular-nums" style={{ color }}>{val}</span>
+              <span className="text-sm font-bold w-8 text-right shrink-0 tabular-nums" style={{ color }}>{val}/10</span>
             </div>
           )
         })}
@@ -480,6 +527,7 @@ export default function HomeScreen() {
         </div>
         {formCard}
         <WeightCard logs={weightLogs ?? []} onSaved={refetchWeightLogs} profileId={profile?.id ?? ''} />
+        {overviewBlock}
       </div>
 
       {/* ── Desktop: Strava-style layout ── */}
@@ -684,6 +732,7 @@ export default function HomeScreen() {
               </div>
 
               <WeightCard logs={weightLogs ?? []} onSaved={refetchWeightLogs} profileId={profile?.id ?? ''} />
+              {overviewBlock}
             </div>
 
             {/* ════ RIGHT PANEL — widgets ════ */}

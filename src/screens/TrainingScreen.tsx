@@ -7,6 +7,7 @@ import { fetchAthleteSessions, validateSession, logFreeSession, type AthleteSess
 import { fetchStravaStatus, connectStrava, syncStrava, fetchStravaActivities, type StravaActivity } from '../lib/queries/strava'
 import { fetchCompetitions, createCompetition, toggleCompetitionDone, deleteCompetition, updateVma, type Competition } from '../lib/queries/profileExtras'
 import { fetchCrossTrainingLogs, createCrossTrainingLog, deleteCrossTrainingLog, type CrossTrainingLog, type Discipline } from '../lib/queries/crossTraining'
+import { fetchAthleteRaces, type ClubRace, type RaceAssignment } from '../lib/queries/clubRaces'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function paceStr(kmh: number): string {
@@ -24,7 +25,7 @@ function splitStr(kmh: number, m: number): string {
 }
 
 // ── data ─────────────────────────────────────────────────────────────────────
-type Chip = { id: string; label: string; done: boolean; description: string | null; sessionId: string | null }
+type Chip = { id: string; label: string; done: boolean; description: string | null; sessionId: string | null; source: 'session' | 'strava' }
 
 const VMA_ZONES = [
   { pct: 60, label: 'Footing très cool' },
@@ -72,6 +73,10 @@ export default function TrainingScreen() {
 
   const { data: competitions, refetch: refetchCompetitions } = useQuery<Competition[]>(
     () => (profile ? fetchCompetitions(profile.id) : Promise.resolve([])),
+    [profile?.id],
+  )
+  const { data: clubRaces } = useQuery<(ClubRace & { myAssignment: RaceAssignment })[]>(
+    () => (profile ? fetchAthleteRaces(profile.id) : Promise.resolve([])),
     [profile?.id],
   )
 
@@ -145,9 +150,14 @@ export default function TrainingScreen() {
 
   const { data: stravaStatus, refetch: refetchStravaStatus } = useQuery(() => fetchStravaStatus(), [])
   const { data: stravaActivities, refetch: refetchStravaActivities } = useQuery<StravaActivity[]>(
-    () => (profile ? fetchStravaActivities(profile.id) : Promise.resolve([])),
+    () => (profile ? fetchStravaActivities(profile.id, 60) : Promise.resolve([])),
     [profile?.id],
   )
+  const stravaWeek = (stravaActivities ?? []).filter((a) => {
+    const d = new Date(a.start_date).getTime()
+    return d >= now.getTime() - 7 * 86400000
+  })
+  const stravaWeekKm = stravaWeek.reduce((sum, a) => sum + a.distance_m / 1000, 0)
 
   async function handleStravaButton() {
     if (!stravaStatus?.connected) {
@@ -172,7 +182,21 @@ export default function TrainingScreen() {
   for (const s of monthSessions ?? []) {
     const day = new Date(s.scheduled_at).getDate()
     dayChips[day] = dayChips[day] ?? []
-    dayChips[day].push({ id: s.id, label: s.title, done: s.completion?.status === 'done', description: s.description, sessionId: s.id })
+    dayChips[day].push({ id: s.id, label: s.title, done: s.completion?.status === 'done', description: s.description, sessionId: s.id, source: 'session' })
+  }
+  for (const a of stravaActivities ?? []) {
+    const d = new Date(a.start_date)
+    if (d < monthStart || d >= monthEnd) continue
+    const day = d.getDate()
+    dayChips[day] = dayChips[day] ?? []
+    dayChips[day].push({
+      id: `strava-${a.id}`,
+      label: `${a.name} · ${(a.distance_m / 1000).toFixed(1)}km`,
+      done: true,
+      description: `${a.type} · ${Math.round(a.moving_time_s / 60)} min (Strava)`,
+      sessionId: null,
+      source: 'strava',
+    })
   }
 
   async function handleValidate(sessionId: string) {
@@ -213,26 +237,49 @@ export default function TrainingScreen() {
       </div>
 
       {stravaStatus?.connected && (
-        <Card className="!p-4">
-          <SectionLabel>Activités Strava récentes</SectionLabel>
+        <Card className="!p-4" style={{ background: 'linear-gradient(135deg, rgba(252,82,0,0.10) 0%, rgba(252,82,0,0.02) 60%, transparent 100%)', border: '1px solid rgba(252,82,0,0.18)' }}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-1.5">
+              <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
+                <path d="M6 1L7.5 4.5H11L8 6.5L9.5 10.5L6 8L2.5 10.5L4 6.5L1 4.5H4.5L6 1Z" fill="#FC5200" />
+              </svg>
+              <SectionLabel>Aperçu Strava</SectionLabel>
+            </div>
+            {!!stravaActivities?.length && (
+              <span className="text-xs" style={{ color: 'var(--text-2)' }}>{stravaActivities.length} activités synchronisées</span>
+            )}
+          </div>
+
           {!stravaActivities?.length ? (
             <p className="text-sm" style={{ color: 'var(--text-2)' }}>Aucune activité synchronisée pour l'instant — clique sur Synchroniser.</p>
           ) : (
-            <div className="space-y-2">
-              {stravaActivities.map((a) => (
-                <div key={a.id} className="flex items-center justify-between py-1.5">
-                  <div>
-                    <p className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>{a.name}</p>
-                    <p className="text-xs" style={{ color: 'var(--text-2)' }}>
-                      {new Date(a.start_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} · {a.type}
+            <>
+              <div className="flex items-center gap-4 mb-3 pb-3" style={{ borderBottom: '1px solid rgba(252,82,0,0.15)' }}>
+                <div>
+                  <p className="text-2xl font-black" style={{ color: 'var(--text-1)' }}>{stravaWeekKm.toFixed(1)}<span className="text-sm font-semibold ml-1" style={{ color: 'var(--text-2)' }}>km</span></p>
+                  <p className="text-[10px] uppercase tracking-wide font-bold" style={{ color: 'var(--text-2)' }}>7 derniers jours</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-black" style={{ color: 'var(--text-1)' }}>{stravaWeek.length}</p>
+                  <p className="text-[10px] uppercase tracking-wide font-bold" style={{ color: 'var(--text-2)' }}>séances Strava</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {stravaActivities.slice(0, 4).map((a) => (
+                  <div key={a.id} className="flex items-center justify-between py-1">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-1)' }}>{a.name}</p>
+                      <p className="text-xs" style={{ color: 'var(--text-2)' }}>
+                        {new Date(a.start_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} · {a.type}
+                      </p>
+                    </div>
+                    <p className="text-sm font-bold shrink-0 ml-2" style={{ color: 'var(--text-1)' }}>
+                      {(a.distance_m / 1000).toFixed(1)} km · {Math.round(a.moving_time_s / 60)} min
                     </p>
                   </div>
-                  <p className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>
-                    {(a.distance_m / 1000).toFixed(1)} km · {Math.round(a.moving_time_s / 60)} min
-                  </p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </>
           )}
         </Card>
       )}
@@ -281,7 +328,10 @@ export default function TrainingScreen() {
                 <div className="w-full space-y-0.5 px-0.5 pb-0.5">
                   {chips.slice(0, 3).map((c, ci) => (
                     <div key={ci} className="rounded px-1 text-[7.5px] font-semibold truncate leading-[14px]"
-                      style={{ background: c.done ? 'rgba(94,186,101,0.18)' : 'rgba(242,196,0,0.18)', color: c.done ? '#5EBA65' : '#D4AB00' }}>
+                      style={{
+                        background: c.source === 'strava' ? 'rgba(252,82,0,0.16)' : c.done ? 'rgba(94,186,101,0.18)' : 'rgba(242,196,0,0.18)',
+                        color: c.source === 'strava' ? '#FC5200' : c.done ? '#5EBA65' : '#D4AB00',
+                      }}>
                       {c.label}
                     </div>
                   ))}
@@ -313,15 +363,20 @@ export default function TrainingScreen() {
             {dayChips[selectedDay].map((c) => (
               <div key={c.id} className="flex items-center justify-between py-2.5 px-3 rounded-xl"
                 style={{ background: 'var(--surface2)' }}>
-                <div className="flex items-center gap-2.5">
-                  <div className="w-2 h-2 rounded-full" style={{ background: c.done ? '#5EBA65' : '#F2C400' }} />
-                  <span className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>{c.label}</span>
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-2 h-2 rounded-full shrink-0" style={{ background: c.source === 'strava' ? '#FC5200' : c.done ? '#5EBA65' : '#F2C400' }} />
+                  <div className="min-w-0">
+                    <span className="text-sm font-medium block truncate" style={{ color: 'var(--text-1)' }}>{c.label}</span>
+                    {c.description && <span className="text-xs block truncate" style={{ color: 'var(--text-2)' }}>{c.description}</span>}
+                  </div>
                 </div>
-                {c.done ? (
-                  <span className="text-xs font-semibold text-[#5EBA65]">✓ Réalisée</span>
+                {c.source === 'strava' ? (
+                  <span className="text-xs font-semibold shrink-0" style={{ color: '#FC5200' }}>Strava</span>
+                ) : c.done ? (
+                  <span className="text-xs font-semibold text-[#5EBA65] shrink-0">Réalisée</span>
                 ) : (
                   <button disabled={validatingId === c.sessionId} onClick={() => c.sessionId && handleValidate(c.sessionId)}
-                    className="text-xs font-bold px-3 py-1 rounded-full text-[#0E0E0D] disabled:opacity-50" style={{ background: '#F2C400' }}>
+                    className="text-xs font-bold px-3 py-1 rounded-full text-[#0E0E0D] disabled:opacity-50 shrink-0" style={{ background: '#F2C400' }}>
                     {validatingId === c.sessionId ? '…' : 'Valider'}
                   </button>
                 )}
@@ -344,14 +399,16 @@ export default function TrainingScreen() {
       {/* ── Objectifs & Compétitions ── */}
       <div>
         <div className="flex items-center gap-2 mb-2 px-1">
-          <span className="text-sm">🏆</span>
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+            <path d="M10 2L12.5 7.5H18L13.5 11L15.5 17L10 13.5L4.5 17L6.5 11L2 7.5H7.5L10 2Z" fill="#F2C400" />
+          </svg>
           <SectionLabel>Objectifs & Compétitions</SectionLabel>
         </div>
         <Card>
           <div className="flex gap-1 mb-4 p-0.5 rounded-2xl w-fit" style={{ background: 'var(--surface2)' }}>
             {([
-              { id: 'comp' as const, icon: '🏅', label: 'Compétitions (1)' },
-              { id: 'obj' as const,  icon: '🎯', label: 'Objectifs (2)' },
+              { id: 'comp' as const, label: 'Compétitions', count: competitions?.filter((c) => c.kind === 'competition').length ?? 0 },
+              { id: 'obj' as const,  label: 'Objectifs', count: competitions?.filter((c) => c.kind === 'objective').length ?? 0 },
             ]).map(t => (
               <button key={t.id} onClick={() => setCompTab(t.id)}
                 className="px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all"
@@ -360,60 +417,108 @@ export default function TrainingScreen() {
                   color: compTab === t.id ? 'var(--text-1)' : 'var(--text-2)',
                   boxShadow: compTab === t.id ? '0 1px 4px rgba(0,0,0,0.12)' : 'none',
                 }}>
-                {t.icon} {t.label}
+                {t.label} {t.count > 0 && <span className="opacity-60">({t.count})</span>}
               </button>
             ))}
           </div>
 
           {showAddComp && (
-            <div className="mb-4 p-3 rounded-xl space-y-2" style={{ background: 'var(--surface2)' }}>
-              <input value={newCompTitle} onChange={(e) => setNewCompTitle(e.target.value)}
-                placeholder={compTab === 'comp' ? 'Ex: 10km de Paris' : 'Ex: Passer sous 40min au 10km'}
-                className="w-full rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
-              <div className="grid grid-cols-3 gap-2">
-                <input type="date" value={newCompDate} onChange={(e) => setNewCompDate(e.target.value)}
-                  className="rounded-[10px] px-2 py-2 text-xs outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
-                <input value={newCompDistance} onChange={(e) => setNewCompDistance(e.target.value)} placeholder="Distance km"
-                  className="rounded-[10px] px-2 py-2 text-xs outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
-                <input value={newCompTarget} onChange={(e) => setNewCompTarget(e.target.value)} placeholder="Objectif chrono"
-                  className="rounded-[10px] px-2 py-2 text-xs outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+            <div className="mb-4 p-4 rounded-2xl space-y-3" style={{ background: 'var(--surface2)', border: '1px solid var(--border)' }}>
+              <div>
+                <label className="text-[10px] uppercase tracking-widest font-bold mb-1.5 block" style={{ color: 'var(--text-2)' }}>Titre</label>
+                <input value={newCompTitle} onChange={(e) => setNewCompTitle(e.target.value)}
+                  placeholder={compTab === 'comp' ? 'Ex: 10km de Paris' : 'Ex: Passer sous 40min au 10km'}
+                  className="w-full rounded-[10px] px-3 py-2.5 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
               </div>
-              <div className="flex gap-2">
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="text-[9px] uppercase tracking-widest font-bold mb-1 block" style={{ color: 'var(--text-2)' }}>Date</label>
+                  <input type="date" value={newCompDate} onChange={(e) => setNewCompDate(e.target.value)}
+                    className="w-full rounded-[10px] px-2 py-2 text-xs outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
+                </div>
+                <div>
+                  <label className="text-[9px] uppercase tracking-widest font-bold mb-1 block" style={{ color: 'var(--text-2)' }}>Distance</label>
+                  <input value={newCompDistance} onChange={(e) => setNewCompDistance(e.target.value)} placeholder="km"
+                    className="w-full rounded-[10px] px-2 py-2 text-xs outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
+                </div>
+                <div>
+                  <label className="text-[9px] uppercase tracking-widest font-bold mb-1 block" style={{ color: 'var(--text-2)' }}>Chrono cible</label>
+                  <input value={newCompTarget} onChange={(e) => setNewCompTarget(e.target.value)} placeholder="ex: 45:00"
+                    className="w-full rounded-[10px] px-2 py-2 text-xs outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
+                </div>
+              </div>
+              <div className="flex gap-2 pt-1">
                 <button onClick={() => handleAddCompetition(compTab === 'comp' ? 'competition' : 'objective')}
                   disabled={savingComp || !newCompTitle.trim()}
-                  className="text-xs font-bold px-3 py-1.5 rounded-[10px] disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+                  className="text-xs font-bold px-4 py-2 rounded-[10px] disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
                   {savingComp ? '…' : 'Ajouter'}
                 </button>
-                <button onClick={() => setShowAddComp(false)} className="text-xs font-semibold px-3 py-1.5 rounded-[10px]" style={{ color: 'var(--text-2)' }}>Annuler</button>
+                <button onClick={() => setShowAddComp(false)} className="text-xs font-semibold px-4 py-2 rounded-[10px]" style={{ color: 'var(--text-2)' }}>Annuler</button>
               </div>
             </div>
           )}
 
           {compTab === 'comp' ? (
             <>
+              {!!clubRaces?.length && (
+                <div className="mb-4 space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-2)' }}>Assigné par le coach</p>
+                  {clubRaces.map((r) => {
+                    const daysLeft = Math.max(0, Math.ceil((new Date(r.event_date).getTime() - now.getTime()) / 86400000))
+                    return (
+                      <div key={r.myAssignment.id} className="flex items-center gap-3 py-3 px-3 rounded-2xl" style={{ background: 'rgba(91,145,216,0.08)', border: '1px solid rgba(91,145,216,0.18)' }}>
+                        <div className="w-11 h-11 rounded-2xl flex flex-col items-center justify-center shrink-0" style={{ background: 'rgba(91,145,216,0.15)' }}>
+                          <span className="text-sm font-black text-[#5B91D8] leading-none">{daysLeft}</span>
+                          <span className="text-[7px] font-bold uppercase tracking-wider text-[#5B91D8] mt-0.5">jours</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>{r.title}</p>
+                          <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>
+                            {new Date(r.event_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}
+                            {r.location ? ` · ${r.location}` : ''} · {r.myAssignment.discipline}
+                            {r.myAssignment.target_time ? ` · Objectif ${r.myAssignment.target_time}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
               {competitions?.filter((c) => c.kind === 'competition').length === 0 && !showAddComp && (
-                <p className="text-sm py-3" style={{ color: 'var(--text-2)' }}>Aucune compétition programmée.</p>
+                <div className="flex flex-col items-center py-6 gap-2">
+                  <svg width="24" height="24" viewBox="0 0 20 20" fill="none">
+                    <path d="M10 2L12.5 7.5H18L13.5 11L15.5 17L10 13.5L4.5 17L6.5 11L2 7.5H7.5L10 2Z" stroke="var(--text-2)" strokeWidth="1.3" strokeLinejoin="round" />
+                  </svg>
+                  <p className="text-sm" style={{ color: 'var(--text-2)' }}>Aucune compétition programmée.</p>
+                </div>
               )}
               {competitions?.filter((c) => c.kind === 'competition').map((c) => {
                 const daysLeft = c.event_date ? Math.max(0, Math.ceil((new Date(c.event_date).getTime() - now.getTime()) / 86400000)) : null
                 return (
-                  <div key={c.id} className="flex items-center gap-3 py-3 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
-                    <div className="w-10 h-10 rounded-full flex flex-col items-center justify-center shrink-0"
-                      style={{ background: 'var(--surface2)', border: '2px solid #F2C400' }}>
-                      <span className="text-[10px] font-black text-[#F2C400]">{daysLeft !== null ? `J${daysLeft}` : '—'}</span>
+                  <div key={c.id} className="flex items-center gap-3 py-3.5 px-3 mb-2 last:mb-0 rounded-2xl"
+                    style={{ background: 'var(--surface2)', borderLeft: '3px solid #F2C400' }}>
+                    <div className="w-12 h-12 rounded-2xl flex flex-col items-center justify-center shrink-0"
+                      style={{ background: 'rgba(242,196,0,0.12)' }}>
+                      <span className="text-sm font-black text-[#F2C400] leading-none">{daysLeft !== null ? daysLeft : '—'}</span>
+                      <span className="text-[7px] font-bold uppercase tracking-wider text-[#F2C400] mt-0.5">jours</span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>{c.title}</p>
-                      <p className="text-xs" style={{ color: 'var(--text-2)' }}>
-                        {c.event_date ? new Date(c.event_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : ''}
-                        {c.distance_km ? ` · ${c.distance_km} km` : ''}{c.target_time ? ` · ${c.target_time}` : ''}
+                      <p className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>{c.title}</p>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>
+                        {c.event_date ? new Date(c.event_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : ''}
+                        {c.distance_km ? ` · ${c.distance_km} km` : ''}{c.target_time ? ` · Objectif ${c.target_time}` : ''}
                       </p>
                     </div>
-                    <button onClick={() => handleDeleteCompetition(c.id)} className="text-xs font-semibold text-[#E4574A]">supprimer</button>
+                    <button onClick={() => handleDeleteCompetition(c.id)}
+                      className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-colors"
+                      style={{ color: 'var(--text-2)' }}>
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
+                    </button>
                   </div>
                 )
               })}
-              <button onClick={() => setShowAddComp(true)} className="mt-3 text-sm font-semibold text-[#F2C400] flex items-center gap-1.5">
+              <button onClick={() => setShowAddComp(true)} className="mt-2 w-full py-2.5 rounded-xl text-sm font-semibold text-[#F2C400] flex items-center justify-center gap-1.5"
+                style={{ border: '1px dashed rgba(242,196,0,0.35)' }}>
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1.5V10.5M1.5 6H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
                 Ajouter une compétition
               </button>
@@ -421,23 +526,34 @@ export default function TrainingScreen() {
           ) : (
             <>
               {competitions?.filter((c) => c.kind === 'objective').length === 0 && !showAddComp && (
-                <p className="text-sm py-3" style={{ color: 'var(--text-2)' }}>Aucun objectif pour l'instant.</p>
+                <div className="flex flex-col items-center py-6 gap-2">
+                  <svg width="24" height="24" viewBox="0 0 20 20" fill="none">
+                    <circle cx="10" cy="10" r="7" stroke="var(--text-2)" strokeWidth="1.3" />
+                    <circle cx="10" cy="10" r="3.5" stroke="var(--text-2)" strokeWidth="1.3" />
+                  </svg>
+                  <p className="text-sm" style={{ color: 'var(--text-2)' }}>Aucun objectif pour l'instant.</p>
+                </div>
               )}
               {competitions?.filter((c) => c.kind === 'objective').map((obj) => (
-                <div key={obj.id} className="flex items-start gap-3 py-3 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
+                <div key={obj.id} className="flex items-start gap-3 py-3 px-3 mb-2 last:mb-0 rounded-2xl" style={{ background: 'var(--surface2)' }}>
                   <button onClick={() => handleToggleObjective(obj.id, !obj.done)}
-                    className="w-5 h-5 rounded-full mt-0.5 flex items-center justify-center shrink-0"
-                    style={{ background: obj.done ? 'rgba(94,186,101,0.2)' : 'rgba(242,196,0,0.15)', border: `1.5px solid ${obj.done ? '#5EBA65' : '#F2C400'}` }}>
-                    {obj.done && <svg width="8" height="6" viewBox="0 0 8 6" fill="none"><path d="M1 3L3 5L7 1" stroke="#5EBA65" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                    className="w-6 h-6 rounded-full mt-0.5 flex items-center justify-center shrink-0 transition-all"
+                    style={{ background: obj.done ? '#5EBA65' : 'transparent', border: `1.5px solid ${obj.done ? '#5EBA65' : 'var(--border)'}` }}>
+                    {obj.done && <svg width="9" height="7" viewBox="0 0 8 6" fill="none"><path d="M1 3L3 5L7 1" stroke="#0E0E0D" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                   </button>
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold" style={{ color: obj.done ? 'var(--text-2)' : 'var(--text-1)', textDecoration: obj.done ? 'line-through' : 'none' }}>{obj.title}</p>
-                    {obj.event_date && <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>Échéance : {new Date(obj.event_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</p>}
+                    {obj.event_date && <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>Échéance : {new Date(obj.event_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}</p>}
                   </div>
-                  <button onClick={() => handleDeleteCompetition(obj.id)} className="text-xs font-semibold text-[#E4574A] shrink-0">supprimer</button>
+                  <button onClick={() => handleDeleteCompetition(obj.id)}
+                    className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                    style={{ color: 'var(--text-2)' }}>
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
+                  </button>
                 </div>
               ))}
-              <button onClick={() => setShowAddComp(true)} className="mt-3 text-sm font-semibold text-[#F2C400] flex items-center gap-1.5">
+              <button onClick={() => setShowAddComp(true)} className="mt-2 w-full py-2.5 rounded-xl text-sm font-semibold text-[#F2C400] flex items-center justify-center gap-1.5"
+                style={{ border: '1px dashed rgba(242,196,0,0.35)' }}>
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1.5V10.5M1.5 6H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
                 Ajouter un objectif
               </button>
@@ -449,15 +565,17 @@ export default function TrainingScreen() {
       {/* ── Croisé ── */}
       <div>
         <div className="flex items-center gap-2 mb-2 px-1">
-          <span className="text-sm">⚡</span>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M8.5 1.5L3.5 7.5H7L5.5 12.5L11 6.5H7.5L8.5 1.5Z" fill="#F2C400" />
+          </svg>
           <SectionLabel>Croisé</SectionLabel>
         </div>
         <Card>
           <div className="flex gap-1 mb-4 p-0.5 rounded-2xl w-fit" style={{ background: 'var(--surface2)' }}>
             {([
-              { id: 'velo' as const, icon: '🚴', label: 'Vélo' },
-              { id: 'natation' as const, icon: '🏊', label: 'Natation' },
-              { id: 'gainage' as const, icon: '🧘', label: 'Gainage' },
+              { id: 'velo' as const, label: 'Vélo' },
+              { id: 'natation' as const, label: 'Natation' },
+              { id: 'gainage' as const, label: 'Gainage' },
             ]).map((t) => (
               <button key={t.id} onClick={() => { setCrossTab(t.id); setShowAddCross(false) }}
                 className="px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all"
@@ -466,7 +584,7 @@ export default function TrainingScreen() {
                   color: crossTab === t.id ? 'var(--text-1)' : 'var(--text-2)',
                   boxShadow: crossTab === t.id ? '0 1px 4px rgba(0,0,0,0.12)' : 'none',
                 }}>
-                {t.icon} {t.label}
+                {t.label}
               </button>
             ))}
           </div>
@@ -519,15 +637,17 @@ export default function TrainingScreen() {
       {/* ── Performance ── */}
       <div>
         <div className="flex items-center gap-2 mb-2 px-1">
-          <span className="text-sm">🏃</span>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M1.5 7H4L5.5 4L8 10L9.5 7H12.5" stroke="#F2C400" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
           <SectionLabel>Performance</SectionLabel>
         </div>
         <Card>
           {/* Tabs */}
           <div className="flex gap-1 mb-5 p-0.5 rounded-2xl w-fit" style={{ background: 'var(--surface2)' }}>
             {([
-              { id: 'allures' as const,     icon: '🏃', label: 'Allures' },
-              { id: 'musculation' as const, icon: '💪', label: 'Musculation' },
+              { id: 'allures' as const,     label: 'Allures' },
+              { id: 'musculation' as const, label: 'Musculation' },
             ]).map((t) => (
               <button key={t.id} onClick={() => setPerfTab(t.id)}
                 className="px-4 py-1.5 rounded-xl text-xs font-semibold transition-all"
@@ -536,7 +656,7 @@ export default function TrainingScreen() {
                   color: perfTab === t.id ? 'var(--text-1)' : 'var(--text-2)',
                   boxShadow: perfTab === t.id ? '0 1px 4px rgba(0,0,0,0.12)' : 'none',
                 }}>
-                {t.icon} {t.label}
+                {t.label}
               </button>
             ))}
           </div>
@@ -587,40 +707,73 @@ export default function TrainingScreen() {
             </>
           ) : (
             <>
+              {!!muscLogs?.length && (
+                <div className="flex items-center gap-6 mb-4 pb-4" style={{ borderBottom: '1px solid var(--border)' }}>
+                  <div>
+                    <p className="text-2xl font-black leading-none" style={{ color: 'var(--text-1)' }}>{muscLogs.length}</p>
+                    <p className="text-[10px] uppercase tracking-wide font-bold mt-1" style={{ color: 'var(--text-2)' }}>séances</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-black leading-none" style={{ color: 'var(--text-1)' }}>{muscLogs.reduce((s, l) => s + l.duration_min, 0)}<span className="text-sm font-semibold ml-1" style={{ color: 'var(--text-2)' }}>min</span></p>
+                    <p className="text-[10px] uppercase tracking-wide font-bold mt-1" style={{ color: 'var(--text-2)' }}>temps total</p>
+                  </div>
+                </div>
+              )}
+
               {showAddCross && (
-                <div className="mb-4 p-3 rounded-xl space-y-2" style={{ background: 'var(--surface2)' }}>
-                  <input value={newCrossDuration} onChange={(e) => setNewCrossDuration(e.target.value)} placeholder="Durée (min)" inputMode="numeric"
-                    className="w-full rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
-                  <input value={newCrossNotes} onChange={(e) => setNewCrossNotes(e.target.value)} placeholder="Notes (ex: Haut du corps, squat 60kg...)"
-                    className="w-full rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
-                  <div className="flex gap-2">
+                <div className="mb-4 p-4 rounded-2xl space-y-3" style={{ background: 'var(--surface2)', border: '1px solid var(--border)' }}>
+                  <div>
+                    <label className="text-[10px] uppercase tracking-widest font-bold mb-1.5 block" style={{ color: 'var(--text-2)' }}>Durée (min)</label>
+                    <input value={newCrossDuration} onChange={(e) => setNewCrossDuration(e.target.value)} placeholder="Ex: 45" inputMode="numeric"
+                      className="w-full rounded-[10px] px-3 py-2.5 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase tracking-widest font-bold mb-1.5 block" style={{ color: 'var(--text-2)' }}>Notes</label>
+                    <input value={newCrossNotes} onChange={(e) => setNewCrossNotes(e.target.value)} placeholder="Ex: Haut du corps, squat 60kg..."
+                      className="w-full rounded-[10px] px-3 py-2.5 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
+                  </div>
+                  <div className="flex gap-2 pt-1">
                     <button onClick={() => handleAddCross('musculation', refetchMuscLogs)} disabled={savingCross || !newCrossDuration.trim()}
-                      className="text-xs font-bold px-3 py-1.5 rounded-[10px] disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+                      className="text-xs font-bold px-4 py-2 rounded-[10px] disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
                       {savingCross ? '…' : 'Ajouter'}
                     </button>
-                    <button onClick={() => setShowAddCross(false)} className="text-xs font-semibold px-3 py-1.5 rounded-[10px]" style={{ color: 'var(--text-2)' }}>Annuler</button>
+                    <button onClick={() => setShowAddCross(false)} className="text-xs font-semibold px-4 py-2 rounded-[10px]" style={{ color: 'var(--text-2)' }}>Annuler</button>
                   </div>
                 </div>
               )}
               {!muscLogs?.length ? (
-                <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Aucune séance de musculation enregistrée.</p>
+                <div className="flex flex-col items-center py-6 gap-2">
+                  <svg width="24" height="24" viewBox="0 0 22 22" fill="none">
+                    <path d="M3 11H5M17 11H19M5 11V8H8V14H5V11ZM17 11V8H14V14H17V11ZM8 11H14" stroke="var(--text-2)" strokeWidth="1.4" strokeLinecap="round" />
+                  </svg>
+                  <p className="text-sm" style={{ color: 'var(--text-2)' }}>Aucune séance de musculation enregistrée.</p>
+                </div>
               ) : (
-                <div className="space-y-0">
+                <div className="space-y-2">
                   {muscLogs.map((log) => (
-                    <div key={log.id} className="py-2.5 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>
+                    <div key={log.id} className="flex items-center gap-3 py-2.5 px-3 rounded-2xl" style={{ background: 'var(--surface2)' }}>
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(228,87,74,0.12)' }}>
+                        <svg width="15" height="15" viewBox="0 0 22 22" fill="none">
+                          <path d="M3 11H5M17 11H19M5 11V8H8V14H5V11ZM17 11V8H14V14H17V11ZM8 11H14" stroke="#E4574A" strokeWidth="1.5" strokeLinecap="round" />
+                        </svg>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-semibold block" style={{ color: 'var(--text-1)' }}>
                           {new Date(log.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} · {log.duration_min} min
                         </span>
-                        <button onClick={() => handleDeleteCross(log.id, refetchMuscLogs)} className="text-xs font-semibold text-[#E4574A]">×</button>
+                        {log.notes && <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-2)' }}>{log.notes}</p>}
                       </div>
-                      {log.notes && <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>{log.notes}</p>}
+                      <button onClick={() => handleDeleteCross(log.id, refetchMuscLogs)}
+                        className="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style={{ color: 'var(--text-2)' }}>
+                        <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
+                      </button>
                     </div>
                   ))}
                 </div>
               )}
               {!showAddCross && (
-                <button onClick={() => setShowAddCross(true)} className="mt-3 text-sm font-semibold text-[#F2C400] flex items-center gap-1.5">
+                <button onClick={() => setShowAddCross(true)} className="mt-3 w-full py-2.5 rounded-xl text-sm font-semibold text-[#F2C400] flex items-center justify-center gap-1.5"
+                  style={{ border: '1px dashed rgba(242,196,0,0.35)' }}>
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1.5V10.5M1.5 6H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
                   Ajouter une séance musculation
                 </button>

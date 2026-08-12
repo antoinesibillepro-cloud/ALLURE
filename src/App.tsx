@@ -15,6 +15,8 @@ import ClubScreen from './screens/ClubScreen'
 import CommunityScreen from './screens/CommunityScreen'
 import CoachCommunity from './screens/coach/CoachCommunity'
 import CoachDesktopApp from './screens/coach/CoachDesktopApp'
+import CoachAdmin from './screens/coach/CoachAdmin'
+import CoachRaces from './screens/coach/CoachRaces'
 
 // ── Icons ──────────────────────────────────────────────
 function IcHome({ active }: { active: boolean }) {
@@ -119,6 +121,16 @@ function IcMoon() {
     </svg>
   )
 }
+function IcSettings({ active }: { active: boolean }) {
+  const c = active ? '#F2C400' : 'var(--text-2)'
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <circle cx="10" cy="10" r="2.8" stroke={c} strokeWidth="1.5" />
+      <path d="M10 2.5V4.5M10 15.5V17.5M17.5 10H15.5M4.5 10H2.5M15.1 4.9L13.7 6.3M6.3 13.7L4.9 15.1M15.1 15.1L13.7 13.7M6.3 6.3L4.9 4.9"
+        stroke={c} strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  )
+}
 function IcBell() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -130,7 +142,7 @@ function IcBell() {
 
 // ── Nav config ────────────────────────────────────────
 type AScreen = 'home' | 'training' | 'community' | 'messaging' | 'stats' | 'club'
-type CScreen = 'dashboard' | 'groups' | 'sessions' | 'community' | 'messaging' | 'clubstats'
+type CScreen = 'dashboard' | 'groups' | 'sessions' | 'community' | 'messaging' | 'clubstats' | 'races' | 'admin'
 
 interface NavItem<T extends string> {
   id: T
@@ -155,13 +167,15 @@ const COACH_NAV: NavItem<CScreen>[] = [
   { id: 'community', label: 'Communauté', short: 'Communauté', icon: (a) => <IcCommunity active={a} /> },
   { id: 'messaging', label: 'Messagerie', short: 'Messages', icon: (a) => <IcMessage active={a} /> },
   { id: 'clubstats', label: 'Stats club', short: 'Stats', icon: (a) => <IcStats active={a} /> },
+  { id: 'races', label: 'Courses', short: 'Courses', icon: (a) => <IcClub active={a} /> },
+  { id: 'admin', label: 'Administration', short: 'Admin', icon: (a) => <IcSettings active={a} /> },
 ]
 
 const A_TITLES: Record<AScreen, string> = {
   home: 'Tableau de bord', training: 'Entraînements', community: 'Communauté', messaging: 'Messagerie', stats: 'Statistiques', club: 'Club',
 }
 const C_TITLES: Record<CScreen, string> = {
-  dashboard: 'Dashboard coach', groups: 'Groupes', sessions: 'Créer une séance', community: 'Communauté', messaging: 'Messagerie', clubstats: 'Statistiques club',
+  dashboard: 'Dashboard coach', groups: 'Groupes', sessions: 'Créer une séance', community: 'Communauté', messaging: 'Messagerie', clubstats: 'Statistiques club', races: 'Calendrier de courses', admin: 'Administration du club',
 }
 
 const UNREAD = 3
@@ -202,7 +216,9 @@ export default function App() {
   const pageTitle = showProfile ? 'Profil' : isCoach ? C_TITLES[cScreen] : A_TITLES[aScreen]
 
   function renderContent() {
-    if (showProfile) return <ProfileScreen onBack={() => setShowProfile(false)} />
+    if (showProfile) return <ProfileScreen onBack={() => setShowProfile(false)}
+      onOpenAdmin={isCoach ? () => { setCScreen('admin'); setShowProfile(false) } : undefined}
+      onOpenRaces={isCoach ? () => { setCScreen('races'); setShowProfile(false) } : undefined} />
     if (isCoach) {
       return (
         <>
@@ -217,6 +233,8 @@ export default function App() {
               case 'community': return <CoachCommunity />
               case 'messaging': return <CoachMessaging />
               case 'clubstats': return <CoachStats />
+              case 'races':     return <CoachRaces />
+              case 'admin':     return <CoachAdmin />
             }})()}
           </div>
         </>

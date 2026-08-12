@@ -51,7 +51,7 @@ export default function MessagingScreen() {
   }
 
   function convTitle(c: ConversationSummary) {
-    if (c.title) return c.kind === 'announcement' ? `📢 ${c.title}` : c.title
+    if (c.title) return c.title
     return c.kind === 'group' ? 'Groupe' : 'Conversation'
   }
 

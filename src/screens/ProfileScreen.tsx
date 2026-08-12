@@ -10,10 +10,10 @@ import {
 } from '../lib/queries/profileExtras'
 
 const OTHER_INTEGRATIONS = [
-  { name: 'Apple Santé', emoji: '🍎' },
-  { name: 'Garmin Connect', emoji: '⌚' },
-  { name: 'Coros', emoji: '⌚' },
-  { name: 'Google Fit', emoji: '🟢' },
+  { name: 'Apple Santé' },
+  { name: 'Garmin Connect' },
+  { name: 'Coros' },
+  { name: 'Google Fit' },
 ]
 
 const SEVERITY_COLOR: Record<string, string> = {
@@ -51,7 +51,7 @@ function IcMoon() {
   )
 }
 
-export default function ProfileScreen({ onBack }: { onBack: () => void }) {
+export default function ProfileScreen({ onBack, onOpenAdmin, onOpenRaces }: { onBack: () => void; onOpenAdmin?: () => void; onOpenRaces?: () => void }) {
   const { isDark, toggleTheme, profile, signOut } = useApp()
   const isCoach = profile?.role === 'coach'
   const name = profile?.name ?? ''
@@ -369,9 +369,10 @@ export default function ProfileScreen({ onBack }: { onBack: () => void }) {
         <SectionLabel>Intégrations</SectionLabel>
         <div className="space-y-3">
           <StravaIntegrationRow />
-          {OTHER_INTEGRATIONS.map(({ name: intName, emoji }) => (
+          {OTHER_INTEGRATIONS.map(({ name: intName }) => (
             <div key={intName} className="flex items-center gap-3">
-              <span className="text-xl w-8 shrink-0 text-center">{emoji}</span>
+              <span className="w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-[10px] font-black"
+                style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>{intName[0]}</span>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>{intName}</p>
                 <p className="text-xs" style={{ color: 'var(--text-2)' }}>Bientôt disponible</p>
@@ -403,6 +404,18 @@ export default function ProfileScreen({ onBack }: { onBack: () => void }) {
               </button>
             </div>
           )}
+          {onOpenRaces && (
+            <button onClick={onOpenRaces} className="w-full text-left px-4 py-3 rounded-[12px] text-sm font-medium transition-colors"
+              style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
+              Calendrier de courses
+            </button>
+          )}
+          {onOpenAdmin && (
+            <button onClick={onOpenAdmin} className="w-full text-left px-4 py-3 rounded-[12px] text-sm font-medium transition-colors"
+              style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
+              Administration du club
+            </button>
+          )}
           <button onClick={signOut} className="w-full text-left px-4 py-3 rounded-[12px] text-sm font-medium text-[#C94040] transition-colors"
             style={{ background: 'rgba(201,64,64,0.08)' }}>
             Se déconnecter
@@ -427,7 +440,11 @@ function StravaIntegrationRow() {
 
   return (
     <div className="flex items-center gap-3">
-      <span className="text-xl w-8 shrink-0 text-center">🟠</span>
+      <span className="w-8 h-8 shrink-0 rounded-full flex items-center justify-center" style={{ background: 'rgba(252,82,0,0.12)' }}>
+        <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
+          <path d="M6 1L7.5 4.5H11L8 6.5L9.5 10.5L6 8L2.5 10.5L4 6.5L1 4.5H4.5L6 1Z" fill="#FC5200" />
+        </svg>
+      </span>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>Strava</p>
         <p className="text-xs" style={{ color: status?.connected ? '#5EBA65' : 'var(--text-2)' }}>

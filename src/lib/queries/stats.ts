@@ -121,6 +121,24 @@ export async function fetchLastActivity(profileId: string): Promise<LastActivity
   }
 }
 
+/** Average pace (min/km) over [from, to) from done + free sessions with both distance and duration. */
+export async function fetchAveragePace(profileId: string, from: string, to: string): Promise<number | null> {
+  const { data } = await supabase
+    .from('session_completions')
+    .select('status, free_session_distance_km, free_session_duration_min, session:sessions(distance_km, duration_min)')
+    .eq('profile_id', profileId)
+    .in('status', ['done', 'free_session'])
+    .gte('completed_at', from)
+    .lt('completed_at', to)
+  let km = 0, min = 0
+  for (const c of (data ?? []) as unknown as { status: string; free_session_distance_km: number | null; free_session_duration_min: number | null; session: { distance_km: number | null; duration_min: number | null } | null }[]) {
+    const d = c.status === 'free_session' ? c.free_session_distance_km : c.session?.distance_km
+    const m = c.status === 'free_session' ? c.free_session_duration_min : c.session?.duration_min
+    if (d && m) { km += d; min += m }
+  }
+  return km > 0 ? min / km : null
+}
+
 /** All-time cumulative km for the athlete (done sessions + free sessions). */
 export async function fetchAthleteTotalKm(profileId: string): Promise<number> {
   const { data: completions } = await supabase

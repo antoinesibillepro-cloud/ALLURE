@@ -1,14 +1,30 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
 type Sport = 'course' | 'velo' | 'natation' | 'muscu' | 'autre'
 
-const SPORTS: { id: Sport; icon: string; label: string; color: string }[] = [
-  { id: 'course',   icon: '🏃', label: 'Course',    color: '#F2C400' },
-  { id: 'velo',     icon: '🚴', label: 'Vélo',      color: '#5B91D8' },
-  { id: 'natation', icon: '🏊', label: 'Natation',  color: '#7B6FD6' },
-  { id: 'muscu',    icon: '💪', label: 'Musculation', color: '#E4574A' },
-  { id: 'autre',    icon: '🧘', label: 'Autre',     color: '#5EBA65' },
+function IcCourse({ c }: { c: string }) {
+  return <svg width="18" height="18" viewBox="0 0 14 14" fill="none"><path d="M1.5 7H4L5.5 4L8 10L9.5 7H12.5" stroke={c} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+}
+function IcVelo({ c }: { c: string }) {
+  return <svg width="18" height="18" viewBox="0 0 22 22" fill="none"><circle cx="6" cy="14" r="4" stroke={c} strokeWidth="1.4" /><circle cx="16" cy="14" r="4" stroke={c} strokeWidth="1.4" /><path d="M16 14L13 8H9L6 14M13 8L16 10" stroke={c} strokeWidth="1.4" strokeLinecap="round" /></svg>
+}
+function IcNatation({ c }: { c: string }) {
+  return <svg width="18" height="18" viewBox="0 0 22 22" fill="none"><path d="M3 13C5 11 8 15 11 13C14 11 17 15 19 13M3 17C5 15 8 19 11 17C14 15 17 19 19 17" stroke={c} strokeWidth="1.4" strokeLinecap="round" /><circle cx="15" cy="6" r="2" stroke={c} strokeWidth="1.4" /></svg>
+}
+function IcMuscu({ c }: { c: string }) {
+  return <svg width="18" height="18" viewBox="0 0 22 22" fill="none"><path d="M3 11H5M17 11H19M5 11V8H8V14H5V11ZM17 11V8H14V14H17V11ZM8 11H14" stroke={c} strokeWidth="1.4" strokeLinecap="round" /></svg>
+}
+function IcAutre({ c }: { c: string }) {
+  return <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke={c} strokeWidth="1.4" /><path d="M10 6.5V10L12.5 12" stroke={c} strokeWidth="1.4" strokeLinecap="round" /></svg>
+}
+
+const SPORTS: { id: Sport; icon: (c: string) => ReactNode; label: string; color: string }[] = [
+  { id: 'course',   icon: (c) => <IcCourse c={c} />,   label: 'Course',      color: '#F2C400' },
+  { id: 'velo',     icon: (c) => <IcVelo c={c} />,     label: 'Vélo',        color: '#5B91D8' },
+  { id: 'natation', icon: (c) => <IcNatation c={c} />, label: 'Natation',    color: '#7B6FD6' },
+  { id: 'muscu',    icon: (c) => <IcMuscu c={c} />,    label: 'Musculation', color: '#E4574A' },
+  { id: 'autre',    icon: (c) => <IcAutre c={c} />,    label: 'Autre',       color: '#5EBA65' },
 ]
 
 const DEFAULT_TITLE: Record<Sport, string> = {
@@ -137,7 +153,7 @@ export default function AddSessionSheet({ date, onClose, onSave }: Props) {
                       background: sport === s.id ? s.color + '22' : 'var(--surface2)',
                       border: sport === s.id ? `1.5px solid ${s.color}` : '1.5px solid transparent',
                     }}>
-                    <span className="text-xl">{s.icon}</span>
+                    {s.icon(sport === s.id ? s.color : 'var(--text-2)')}
                     <span className="text-[10px] font-bold" style={{ color: sport === s.id ? s.color : 'var(--text-2)' }}>{s.label}</span>
                   </button>
                 ))}
@@ -212,7 +228,7 @@ export default function AddSessionSheet({ date, onClose, onSave }: Props) {
               <button onClick={save}
                 className="w-full py-4 rounded-2xl font-black text-base text-[#0E0E0D] transition-all active:scale-[0.97]"
                 style={{ background: sportInfo.color, boxShadow: `0 4px 20px ${sportInfo.color}55` }}>
-                {sportInfo.icon} Enregistrer la séance
+                Enregistrer la séance
               </button>
             </>
           )}
