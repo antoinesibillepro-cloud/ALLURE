@@ -1,0 +1,10 @@
+{
+  "description": "Track and analyze running sessions to improve performance with personalized stats and progress insights for runners of all levels.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
