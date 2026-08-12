@@ -55,12 +55,22 @@ export async function removeMember(profileId: string) {
   if (error) throw error
 }
 
-export async function resetPasswordEmail(email: string) {
-  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin })
-  if (error) throw error
+/** Generates a new password for the member and emails it to them via Resend. */
+export async function resetPasswordEmail(profileId: string) {
+  const { data: session } = await supabase.auth.getSession()
+  const token = session.session?.access_token
+  if (!token) throw new Error('Non authentifié')
+  const res = await fetch('/api/admin/reset-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ profileId }),
+  })
+  if (!res.ok) throw new Error((await res.json()).error ?? "Échec de la réinitialisation")
+  const result = await res.json() as { ok: boolean; emailError?: string }
+  if (result.emailError) throw new Error(result.emailError)
 }
 
-export async function createAccountViaAdmin(input: { email: string; password: string; name: string; role: 'athlete' | 'coach'; groupId: string | null }) {
+export async function createAccountViaAdmin(input: { email: string; password: string; name: string; role: 'athlete' | 'coach'; groupId: string | null; sendWelcomeEmail?: boolean }) {
   const { data: session } = await supabase.auth.getSession()
   const token = session.session?.access_token
   if (!token) throw new Error('Non authentifié')
@@ -70,7 +80,19 @@ export async function createAccountViaAdmin(input: { email: string; password: st
     body: JSON.stringify(input),
   })
   if (!res.ok) throw new Error((await res.json()).error ?? 'Échec de la création du compte')
-  return res.json()
+  return res.json() as Promise<{ id: string; emailError: string | null }>
+}
+
+export async function sendMemberEmail(to: string, subject: string, message: string) {
+  const { data: session } = await supabase.auth.getSession()
+  const token = session.session?.access_token
+  if (!token) throw new Error('Non authentifié')
+  const res = await fetch('/api/admin/send-email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ to, subject, message }),
+  })
+  if (!res.ok) throw new Error((await res.json()).error ?? "Échec de l'envoi")
 }
 
 export async function updateClubName(clubId: string, name: string) {

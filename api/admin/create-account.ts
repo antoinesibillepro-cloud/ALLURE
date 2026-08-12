@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { supabaseAdmin, profileIdFromAuthHeader } from '../_lib/supabaseAdmin.js'
+import { sendEmail, welcomeEmailHtml } from '../_lib/email.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -15,8 +16,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .single()
   if (callerErr || !caller || caller.role !== 'coach') return res.status(403).json({ error: 'Réservé aux coaches' })
 
-  const { email, password, name, role, groupId } = req.body as {
-    email?: string; password?: string; name?: string; role?: 'athlete' | 'coach'; groupId?: string | null
+  const { email, password, name, role, groupId, sendWelcomeEmail } = req.body as {
+    email?: string; password?: string; name?: string; role?: 'athlete' | 'coach'; groupId?: string | null; sendWelcomeEmail?: boolean
   }
   if (!email || !password || !name || (role !== 'athlete' && role !== 'coach')) {
     return res.status(400).json({ error: 'Champs manquants' })
@@ -39,5 +40,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     await admin.from('group_members').insert({ group_id: groupId, profile_id: created.user.id })
   }
 
-  return res.status(200).json({ id: created.user.id })
+  let emailError: string | null = null
+  if (sendWelcomeEmail) {
+    const { data: club } = await admin.from('clubs').select('name').eq('id', caller.club_id).single()
+    const appUrl = `https://${req.headers.host}`
+    try {
+      await sendEmail(email, `Bienvenue chez ${club?.name ?? 'ton club'} — accès à ALLURE`, welcomeEmailHtml(name, club?.name ?? 'ton club', email, password, appUrl))
+    } catch (e) {
+      emailError = e instanceof Error ? e.message : 'Échec de l\'envoi de l\'email'
+    }
+  }
+
+  return res.status(200).json({ id: created.user.id, emailError })
 }

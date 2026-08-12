@@ -4,7 +4,7 @@ import { useApp } from '../../context/AppContext'
 import { useQuery } from '../../lib/useQuery'
 import {
   fetchClubMembers, updateMemberRole, updateMemberName, updateMemberVma, updateMemberGroup, removeMember,
-  updateClubName, resetPasswordEmail, createAccountViaAdmin,
+  updateClubName, resetPasswordEmail, createAccountViaAdmin, sendMemberEmail,
   fetchClubInvites, createClubInvite, type ClubMember, type ClubInvite,
 } from '../../lib/queries/clubAdmin'
 import { fetchGroups, type GroupWithMembers } from '../../lib/queries/groups'
@@ -44,15 +44,23 @@ export default function CoachAdmin() {
   const [newEmail, setNewEmail] = useState('')
   const [newRole, setNewRole] = useState<'athlete' | 'coach'>('athlete')
   const [newGroupId, setNewGroupId] = useState('')
+  const [newSendEmail, setNewSendEmail] = useState(true)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
-  const [createdCreds, setCreatedCreds] = useState<{ email: string; password: string } | null>(null)
+  const [createdCreds, setCreatedCreds] = useState<{ email: string; password: string; emailError: string | null } | null>(null)
 
   const [showImport, setShowImport] = useState(false)
   const [importText, setImportText] = useState('')
   const [importGroupId, setImportGroupId] = useState('')
+  const [importSendEmail, setImportSendEmail] = useState(true)
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<string | null>(null)
+
+  const [emailTarget, setEmailTarget] = useState<ClubMember | null>(null)
+  const [emailSubject, setEmailSubject] = useState('')
+  const [emailBody, setEmailBody] = useState('')
+  const [sendingEmail, setSendingEmail] = useState(false)
+  const [emailSentMsg, setEmailSentMsg] = useState<string | null>(null)
 
   async function handleSaveClubName() {
     if (!profile || !clubName.trim()) return
@@ -113,7 +121,7 @@ export default function CoachAdmin() {
   async function handleResetPassword(m: ClubMember) {
     setBusyId(m.id)
     try {
-      await resetPasswordEmail(m.email)
+      await resetPasswordEmail(m.id)
       setActionMsg({ id: m.id, text: 'Email envoyé' })
       setTimeout(() => setActionMsg(null), 3000)
     } catch {
@@ -141,8 +149,11 @@ export default function CoachAdmin() {
     setCreateError(null)
     try {
       const password = randomPassword()
-      await createAccountViaAdmin({ email: newEmail.trim().toLowerCase(), password, name: newName.trim(), role: newRole, groupId: newGroupId || null })
-      setCreatedCreds({ email: newEmail.trim().toLowerCase(), password })
+      const result = await createAccountViaAdmin({
+        email: newEmail.trim().toLowerCase(), password, name: newName.trim(), role: newRole, groupId: newGroupId || null,
+        sendWelcomeEmail: newSendEmail,
+      })
+      setCreatedCreds({ email: newEmail.trim().toLowerCase(), password, emailError: result.emailError })
       setNewName(''); setNewEmail(''); setNewGroupId('')
       await refetchMembers()
     } catch (err) {
@@ -163,7 +174,7 @@ export default function CoachAdmin() {
       if (parts.length < 2) { fail++; continue }
       const [name, email] = parts
       try {
-        await createAccountViaAdmin({ email: email.toLowerCase(), password: randomPassword(), name, role: 'athlete', groupId: importGroupId || null })
+        await createAccountViaAdmin({ email: email.toLowerCase(), password: randomPassword(), name, role: 'athlete', groupId: importGroupId || null, sendWelcomeEmail: importSendEmail })
         ok++
       } catch {
         fail++
@@ -173,6 +184,20 @@ export default function CoachAdmin() {
     setImportResult(`${ok} compte${ok > 1 ? 's' : ''} créé${ok > 1 ? 's' : ''}${fail ? `, ${fail} échec${fail > 1 ? 's' : ''}` : ''}`)
     setImportText('')
     await refetchMembers()
+  }
+
+  async function handleSendEmail() {
+    if (!emailTarget || !emailSubject.trim() || !emailBody.trim()) return
+    setSendingEmail(true)
+    try {
+      await sendMemberEmail(emailTarget.email, emailSubject.trim(), emailBody.trim())
+      setEmailSentMsg('Email envoyé !')
+      setTimeout(() => { setEmailTarget(null); setEmailSentMsg(null); setEmailSubject(''); setEmailBody('') }, 1500)
+    } catch (err) {
+      setEmailSentMsg(err instanceof Error ? err.message : "Échec de l'envoi")
+    } finally {
+      setSendingEmail(false)
+    }
   }
 
   const athletes = (members ?? []).filter((m) => m.role === 'athlete')
@@ -261,7 +286,12 @@ export default function CoachAdmin() {
             {createdCreds ? (
               <div className="text-center py-2">
                 <p className="text-sm font-bold" style={{ color: '#5EBA65' }}>Compte créé !</p>
-                <p className="text-xs mt-2" style={{ color: 'var(--text-2)' }}>Transmets ces identifiants à la personne :</p>
+                {newSendEmail && (
+                  <p className="text-xs mt-1" style={{ color: createdCreds.emailError ? '#E4574A' : '#5EBA65' }}>
+                    {createdCreds.emailError ? `Email non envoyé : ${createdCreds.emailError}` : 'Email de bienvenue envoyé.'}
+                  </p>
+                )}
+                <p className="text-xs mt-2" style={{ color: 'var(--text-2)' }}>Identifiants (au cas où) :</p>
                 <p className="text-sm font-mono mt-1" style={{ color: 'var(--text-1)' }}>{createdCreds.email}</p>
                 <p className="text-sm font-mono" style={{ color: 'var(--text-1)' }}>{createdCreds.password}</p>
                 <button onClick={() => { setCreatedCreds(null); setShowCreate(false) }} className="text-xs font-semibold mt-3" style={{ color: '#F2C400' }}>Fermer</button>
@@ -286,6 +316,10 @@ export default function CoachAdmin() {
                     {groups?.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
                   </select>
                 </div>
+                <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-2)' }}>
+                  <input type="checkbox" checked={newSendEmail} onChange={(e) => setNewSendEmail(e.target.checked)} />
+                  Envoyer un email de bienvenue avec les identifiants
+                </label>
                 {createError && <p className="text-xs" style={{ color: '#E4574A' }}>{createError}</p>}
                 <div className="flex gap-2">
                   <button onClick={handleCreateAccount} disabled={creating || !newName.trim() || !newEmail.trim()}
@@ -310,6 +344,10 @@ export default function CoachAdmin() {
               <option value="">Sans groupe</option>
               {groups?.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
             </select>
+            <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-2)' }}>
+              <input type="checkbox" checked={importSendEmail} onChange={(e) => setImportSendEmail(e.target.checked)} />
+              Envoyer un email de bienvenue à chaque compte créé
+            </label>
             {importResult && <p className="text-xs" style={{ color: '#5EBA65' }}>{importResult}</p>}
             <div className="flex gap-2">
               <button onClick={handleImport} disabled={importing || !importText.trim()}
@@ -370,6 +408,10 @@ export default function CoachAdmin() {
                           réinit. mot de passe
                         </button>
                       )}
+                      <button onClick={() => { setEmailTarget(m); setEmailSubject(''); setEmailBody(''); setEmailSentMsg(null) }}
+                        className="text-xs font-semibold underline" style={{ color: 'var(--text-2)' }}>
+                        envoyer un email
+                      </button>
                       {m.id !== profile?.id && (
                         <button onClick={() => setConfirmRemove(m)} className="text-xs font-semibold" style={{ color: '#E4574A' }}>supprimer</button>
                       )}
@@ -384,6 +426,34 @@ export default function CoachAdmin() {
           Les modifications sont enregistrées dès que tu quittes un champ.
         </p>
       </Card>
+
+      {emailTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
+          <div className="w-full max-w-md rounded-2xl p-5 space-y-3" style={{ background: 'var(--card)' }}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-base font-bold" style={{ color: 'var(--text-1)' }}>Envoyer un email</p>
+                <p className="text-xs" style={{ color: 'var(--text-2)' }}>À {emailTarget.name} · {emailTarget.email}</p>
+              </div>
+              <button onClick={() => setEmailTarget(null)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
+              </button>
+            </div>
+            <input value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} placeholder="Objet"
+              className="w-full rounded-[10px] px-3 py-2.5 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
+            <textarea value={emailBody} onChange={(e) => setEmailBody(e.target.value)} rows={5} placeholder="Message"
+              className="w-full rounded-[10px] px-3 py-2.5 text-sm outline-none resize-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
+            {emailSentMsg && <p className="text-xs" style={{ color: emailSentMsg.includes('envoyé') ? '#5EBA65' : '#E4574A' }}>{emailSentMsg}</p>}
+            <div className="flex gap-2">
+              <button onClick={handleSendEmail} disabled={sendingEmail || !emailSubject.trim() || !emailBody.trim()}
+                className="text-xs font-bold px-4 py-2.5 rounded-[10px] disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+                {sendingEmail ? 'Envoi…' : 'Envoyer'}
+              </button>
+              <button onClick={() => setEmailTarget(null)} className="text-xs font-semibold px-4 py-2.5 rounded-[10px]" style={{ color: 'var(--text-2)' }}>Annuler</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {confirmRemove && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
