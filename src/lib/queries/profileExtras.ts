@@ -132,8 +132,19 @@ export async function fetchClubName(clubId: string) {
   return data?.name ?? ''
 }
 
-// ── Referent coach (first coach of the athlete's club) ───────────────────
+// ── Referent coach (the primary coach, falling back to the earliest coach of the club) ──
 export async function fetchReferentCoach(clubId: string) {
+  const { data: primary, error: primaryErr } = await supabase
+    .from('profiles')
+    .select('id, name')
+    .eq('club_id', clubId)
+    .eq('role', 'coach')
+    .eq('is_primary_coach', true)
+    .limit(1)
+    .maybeSingle()
+  if (primaryErr) throw primaryErr
+  if (primary) return primary
+
   const { data, error } = await supabase
     .from('profiles')
     .select('id, name')
@@ -148,6 +159,18 @@ export async function fetchReferentCoach(clubId: string) {
 
 // ── Notification prefs ───────────────────────────────────────────────────
 export interface NotificationPrefs { messages: boolean; sessions: boolean; reminders: boolean; competitions: boolean }
+
+export async function uploadAvatar(profileId: string, file: File): Promise<string> {
+  const ext = file.name.split('.').pop() ?? 'jpg'
+  const path = `${profileId}/avatar.${ext}`
+  const { error: uploadErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true, cacheControl: '3600' })
+  if (uploadErr) throw uploadErr
+  const { data } = supabase.storage.from('avatars').getPublicUrl(path)
+  const url = `${data.publicUrl}?t=${Date.now()}`
+  const { error } = await supabase.from('profiles').update({ avatar_url: url }).eq('id', profileId)
+  if (error) throw error
+  return url
+}
 
 export async function updateVma(profileId: string, vma: number) {
   const { error } = await supabase.from('profiles').update({ vma }).eq('id', profileId)

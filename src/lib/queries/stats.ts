@@ -233,6 +233,61 @@ export async function fetchGoodRecoveryDaysCount(profileId: string, days = 30, t
   }).length
 }
 
+export interface TypeBreakdown { type: string; count: number }
+const TYPE_COLORS = ['#F2C400', '#5B91D8', '#E4574A', '#7B6FD6', '#5EBA65', '#F2924D', '#4FC3D9']
+
+/** Breakdown of completed sessions by training type (VMA, endurance, côtes...) over [from, to). */
+export async function fetchSessionTypeBreakdown(profileId: string, from: string, to: string): Promise<TypeBreakdown[]> {
+  const { data } = await supabase
+    .from('session_completions')
+    .select('status, free_session_title, session:sessions(type)')
+    .eq('profile_id', profileId)
+    .in('status', ['done', 'free_session'])
+    .gte('completed_at', from)
+    .lt('completed_at', to)
+  const counts = new Map<string, number>()
+  for (const c of (data ?? []) as unknown as { status: string; free_session_title: string | null; session: { type: string } | null }[]) {
+    const type = c.status === 'free_session' ? 'Séance libre' : (c.session?.type ?? 'Autre')
+    counts.set(type, (counts.get(type) ?? 0) + 1)
+  }
+  return [...counts.entries()].map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count)
+}
+export { TYPE_COLORS }
+
+/** Running km per week, over the last `weeks` weeks. */
+export async function fetchWeeklyKm(profileId: string, weeks = 4): Promise<{ label: string; value: number }[]> {
+  const now = new Date()
+  const day = (now.getDay() + 6) % 7
+  const thisWeekStart = new Date(now); thisWeekStart.setHours(0, 0, 0, 0); thisWeekStart.setDate(thisWeekStart.getDate() - day)
+  const earliest = new Date(thisWeekStart.getTime() - weeks * 7 * 86400000)
+
+  const { data } = await supabase
+    .from('session_completions')
+    .select('completed_at, status, free_session_distance_km, actual_distance_km, session:sessions(distance_km)')
+    .eq('profile_id', profileId)
+    .in('status', ['done', 'free_session'])
+    .gte('completed_at', earliest.toISOString())
+
+  const rows = (data ?? []) as unknown as {
+    completed_at: string; status: string; free_session_distance_km: number | null
+    actual_distance_km: number | null; session: { distance_km: number | null } | null
+  }[]
+
+  const results: { label: string; value: number }[] = []
+  for (let i = weeks - 1; i >= 0; i--) {
+    const start = new Date(thisWeekStart.getTime() - i * 7 * 86400000)
+    const end = new Date(start.getTime() + 7 * 86400000)
+    let km = 0
+    for (const r of rows) {
+      const t = new Date(r.completed_at).getTime()
+      if (t < start.getTime() || t >= end.getTime()) continue
+      km += r.status === 'free_session' ? (r.free_session_distance_km ?? 0) : (r.actual_distance_km ?? r.session?.distance_km ?? 0)
+    }
+    results.push({ label: start.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }), value: +km.toFixed(1) })
+  }
+  return results
+}
+
 /** All-time cumulative km for the athlete (done sessions + free sessions). */
 export async function fetchAthleteTotalKm(profileId: string): Promise<number> {
   const { data: completions } = await supabase

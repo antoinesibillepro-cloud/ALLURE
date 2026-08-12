@@ -412,37 +412,46 @@ export type Database = {
       }
       cross_training_logs: {
         Row: {
+          avg_speed_kmh: number | null
           created_at: string
           date: string
           discipline: Database["public"]["Enums"]["cross_training_discipline"]
           distance_km: number | null
           duration_min: number
           id: string
+          muscle_zones: string[]
           notes: string | null
           profile_id: string
           rpe: number | null
+          time_slot: string | null
         }
         Insert: {
+          avg_speed_kmh?: number | null
           created_at?: string
           date: string
           discipline: Database["public"]["Enums"]["cross_training_discipline"]
           distance_km?: number | null
           duration_min: number
           id?: string
+          muscle_zones?: string[]
           notes?: string | null
           profile_id: string
           rpe?: number | null
+          time_slot?: string | null
         }
         Update: {
+          avg_speed_kmh?: number | null
           created_at?: string
           date?: string
           discipline?: Database["public"]["Enums"]["cross_training_discipline"]
           distance_km?: number | null
           duration_min?: number
           id?: string
+          muscle_zones?: string[]
           notes?: string | null
           profile_id?: string
           rpe?: number | null
+          time_slot?: string | null
         }
         Relationships: [
           {
@@ -695,6 +704,7 @@ export type Database = {
           email: string
           ffa_licence_url: string | null
           id: string
+          is_primary_coach: boolean
           name: string
           notification_prefs: Json
           role: Database["public"]["Enums"]["user_role"]
@@ -708,6 +718,7 @@ export type Database = {
           email: string
           ffa_licence_url?: string | null
           id: string
+          is_primary_coach?: boolean
           name: string
           notification_prefs?: Json
           role?: Database["public"]["Enums"]["user_role"]
@@ -721,6 +732,7 @@ export type Database = {
           email?: string
           ffa_licence_url?: string | null
           id?: string
+          is_primary_coach?: boolean
           name?: string
           notification_prefs?: Json
           role?: Database["public"]["Enums"]["user_role"]
@@ -1114,6 +1126,38 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "strava_activities_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      strength_maxes: {
+        Row: {
+          exercise: string
+          id: string
+          max_kg: number
+          profile_id: string
+          updated_at: string
+        }
+        Insert: {
+          exercise: string
+          id?: string
+          max_kg: number
+          profile_id: string
+          updated_at?: string
+        }
+        Update: {
+          exercise?: string
+          id?: string
+          max_kg?: number
+          profile_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "strength_maxes_profile_id_fkey"
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"

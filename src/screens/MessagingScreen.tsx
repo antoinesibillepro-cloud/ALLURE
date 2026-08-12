@@ -55,7 +55,7 @@ export default function MessagingScreen() {
     return c.kind === 'group' ? 'Groupe' : 'Conversation'
   }
 
-  const ConvList = () => (
+  const convList = (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="p-4 pb-0 shrink-0">
         <h2 className="text-xl font-black mb-3 md:hidden" style={{ color: 'var(--text-1)' }}>Messagerie</h2>
@@ -111,7 +111,7 @@ export default function MessagingScreen() {
     </div>
   )
 
-  const ConvView = () => (
+  const convView = (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="flex items-center gap-3 px-4 py-3.5 shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
         <button className="md:hidden w-8 h-8 rounded-full flex items-center justify-center transition-colors"
@@ -145,10 +145,11 @@ export default function MessagingScreen() {
         ) : (
           messages.map((msg) => {
             const isMe = msg.sender_id === profile?.id
-            const senderName = (msg.sender as { name?: string } | null)?.name ?? ''
+            const sender = msg.sender as { name?: string; avatar_url?: string | null } | null
+            const senderName = sender?.name ?? ''
             return (
               <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'items-end gap-2'}`}>
-                {!isMe && <Avatar initials={initialsOf(senderName)} size={28} />}
+                {!isMe && <Avatar initials={initialsOf(senderName)} size={28} src={sender?.avatar_url ?? null} />}
                 <div className="max-w-[78%]">
                   {!isMe && (
                     <div className="flex items-center gap-1.5 mb-1 ml-1">
@@ -204,14 +205,14 @@ export default function MessagingScreen() {
   return (
     <>
       <div className="md:hidden" style={{ height: 'calc(100dvh - 7rem)' }}>
-        {mobileView === 'list' ? <ConvList /> : <ConvView />}
+        {mobileView === 'list' ? convList : convView}
       </div>
       <div className="hidden md:flex" style={{ height: 'calc(100vh - 3.5rem)' }}>
         <div className="w-80 shrink-0 flex flex-col overflow-hidden" style={{ borderRight: '1px solid var(--border)' }}>
-          <ConvList />
+          {convList}
         </div>
         <div className="flex-1 flex flex-col overflow-hidden">
-          <ConvView />
+          {convView}
         </div>
       </div>
     </>

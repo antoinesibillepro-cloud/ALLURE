@@ -78,16 +78,18 @@ export function Avatar({
   size = 36,
   yellow = false,
   online = false,
+  src = null,
 }: {
   initials: string
   size?: number
   yellow?: boolean
   online?: boolean
+  src?: string | null
 }) {
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <div
-        className="flex items-center justify-center rounded-full font-black text-xs"
+        className="flex items-center justify-center rounded-full font-black text-xs overflow-hidden"
         style={{
           width: size,
           height: size,
@@ -97,7 +99,7 @@ export function Avatar({
           border: online ? '2px solid #F2C400' : undefined,
         }}
       >
-        {initials}
+        {src ? <img src={src} alt="" className="w-full h-full object-cover" /> : initials}
       </div>
       {online && (
         <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-[#5EBA65] rounded-full"

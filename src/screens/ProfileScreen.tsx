@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase'
 import { notificationPermission, requestNotificationPermission } from '../lib/notifications'
 import {
   fetchClubName, fetchReferentCoach, fetchPersonalRecords, createPersonalRecord, deletePersonalRecord,
-  fetchInjuries, createInjury, saveNotificationPrefs, type PersonalRecord, type Injury, type NotificationPrefs,
+  fetchInjuries, createInjury, saveNotificationPrefs, uploadAvatar, type PersonalRecord, type Injury, type NotificationPrefs,
 } from '../lib/queries/profileExtras'
 
 const OTHER_INTEGRATIONS = [
@@ -53,10 +53,24 @@ function IcMoon() {
 }
 
 export default function ProfileScreen({ onBack, onOpenAdmin, onOpenRaces }: { onBack: () => void; onOpenAdmin?: () => void; onOpenRaces?: () => void }) {
-  const { isDark, toggleTheme, profile, signOut } = useApp()
+  const { isDark, toggleTheme, profile, signOut, refreshProfile } = useApp()
   const isCoach = profile?.role === 'coach'
   const name = profile?.name ?? ''
   const initials = name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+
+  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !profile) return
+    setUploadingAvatar(true)
+    try {
+      await uploadAvatar(profile.id, file)
+      await refreshProfile()
+    } finally {
+      setUploadingAvatar(false)
+      e.target.value = ''
+    }
+  }
 
   const [notifs, setNotifs] = useState<NotificationPrefs>(
     profile?.notification_prefs ?? { messages: true, sessions: true, reminders: false, competitions: true },
@@ -160,16 +174,29 @@ export default function ProfileScreen({ onBack, onOpenAdmin, onOpenRaces }: { on
       {/* Identity hero card */}
       <Card>
         <div className="flex items-center gap-4">
-          <div className="relative shrink-0">
-            <div className="w-20 h-20 rounded-full flex items-center justify-center text-2xl font-black"
+          <label className="relative shrink-0 cursor-pointer group">
+            <div className="w-20 h-20 rounded-full flex items-center justify-center text-2xl font-black overflow-hidden"
               style={{
                 background: isCoach ? '#F2C400' : 'var(--avatar)',
                 color: isCoach ? '#0E0E0D' : 'var(--avatar-text)',
                 border: '3px solid #F2C400',
               }}>
-              {initials}
+              {profile?.avatar_url ? <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" /> : initials}
             </div>
-          </div>
+            <div className="absolute inset-0 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              style={{ background: 'rgba(0,0,0,0.4)' }}>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                <path d="M4 15.5V17H5.5L14.5 8L13 6.5L4 15.5Z" fill="white" />
+                <path d="M15.5 6.5L13.5 4.5L15 3L17 5L15.5 6.5Z" fill="white" />
+              </svg>
+            </div>
+            <input type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} disabled={uploadingAvatar} />
+            {uploadingAvatar && (
+              <div className="absolute inset-0 rounded-full flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
+                <div className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: '#F2C400', borderTopColor: 'transparent' }} />
+              </div>
+            )}
+          </label>
           <div className="flex-1 min-w-0">
             <h2 className="text-xl font-black leading-tight" style={{ color: 'var(--text-1)' }}>
               {name}

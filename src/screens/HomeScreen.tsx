@@ -9,7 +9,8 @@ import { fetchTodayCheckin, saveCheckin, type DailyCheckin } from '../lib/querie
 import { fetchAthleteWeekStats, fetchAthleteTotalKm, fetchLastActivity } from '../lib/queries/stats'
 import { fetchNextCompetition, fetchMyGroups, fetchWeightLogs, saveWeightLog, type WeightLog } from '../lib/queries/profileExtras'
 import { fetchDisciplineBreakdown, fetchWeeklyLoad, type DisciplineBreakdown } from '../lib/queries/crossTraining'
-import { DonutChart, LoadChart } from '../components/charts'
+import { fetchSessionTypeBreakdown, TYPE_COLORS, type TypeBreakdown } from '../lib/queries/stats'
+import { DonutChart, LoadChart, GenericDonutChart } from '../components/charts'
 
 function startOfWeek(d: Date) {
   const day = (d.getDay() + 6) % 7 // Monday = 0
@@ -253,6 +254,10 @@ export default function HomeScreen() {
     () => (profile ? fetchWeeklyLoad(profile.id) : Promise.resolve([])),
     [profile?.id],
   )
+  const { data: typeBreakdown } = useQuery<TypeBreakdown[]>(
+    () => (profile ? fetchSessionTypeBreakdown(profile.id, monthAgo, today.toISOString()) : Promise.resolve([])),
+    [profile?.id],
+  )
 
   const [showRpe, setShowRpe] = useState(false)
 
@@ -299,12 +304,22 @@ export default function HomeScreen() {
   const overviewBlock = (
     <div className="space-y-4">
       <Card>
-        <SectionLabel>Répartition · 30 derniers jours</SectionLabel>
+        <SectionLabel>Répartition par sport · 30 derniers jours</SectionLabel>
         <div className="mt-3">
           {!breakdown?.length ? (
             <p className="text-sm py-2" style={{ color: 'var(--text-2)' }}>Aucune séance enregistrée sur les 30 derniers jours.</p>
           ) : (
             <DonutChart segments={breakdown} />
+          )}
+        </div>
+      </Card>
+      <Card>
+        <SectionLabel>Répartition par type d&apos;entraînement · 30 derniers jours</SectionLabel>
+        <div className="mt-3">
+          {!typeBreakdown?.length ? (
+            <p className="text-sm py-2" style={{ color: 'var(--text-2)' }}>Aucune séance enregistrée sur les 30 derniers jours.</p>
+          ) : (
+            <GenericDonutChart segments={typeBreakdown.map((t) => ({ label: t.type, count: t.count }))} colors={TYPE_COLORS} />
           )}
         </div>
       </Card>
@@ -423,24 +438,24 @@ export default function HomeScreen() {
           <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M4.5 3L7.5 6L4.5 9" stroke="var(--text-2)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </button>
       </div>
-      <div className="flex gap-1.5 overflow-x-auto">
+      <div className="grid grid-cols-7 gap-1.5">
         {DAYS.map((d, i) => {
           const isSelected = i === selectedDay
           const status = dayStatusByDate.get(isoDate(weekDates[i])) ?? null
           return (
             <button key={i} onClick={() => setSelectedDay(i)}
-              className="btn-press shrink-0 flex flex-col items-center gap-1.5 w-11 py-2.5 rounded-2xl"
+              className="btn-press flex flex-col items-center gap-1.5 py-2.5 rounded-2xl min-w-0"
               style={{
                 background: isSelected ? '#F2C400' : 'var(--surface2)',
                 transform: isSelected ? 'scale(1.05)' : 'scale(1)',
-                transition: 'all 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                transition: 'background 0.28s, transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)',
               }}>
               <span className="text-[9px] font-bold uppercase tracking-wider"
                 style={{ color: isSelected ? '#0E0E0D' : 'var(--text-2)' }}>{d}</span>
               <span className="text-sm font-black"
                 style={{ color: isSelected ? '#0E0E0D' : 'var(--text-1)' }}>{weekDates[i].getDate()}</span>
-              {status && <span className="w-1.5 h-1.5 rounded-full"
-                style={{ background: isSelected ? '#0E0E0D' : STATUS_COLOR[status] }} />}
+              <span className="w-1.5 h-1.5 rounded-full"
+                style={{ background: status ? (isSelected ? '#0E0E0D' : STATUS_COLOR[status]) : 'transparent' }} />
             </button>
           )
         })}

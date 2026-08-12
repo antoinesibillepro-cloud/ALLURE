@@ -72,7 +72,7 @@ export async function fetchOrCreateDm(clubId: string, meId: string, otherId: str
 export async function fetchMessages(conversationId: string) {
   const { data, error } = await supabase
     .from('messages')
-    .select('id, body, created_at, sender_id, sender:profiles(name)')
+    .select('id, body, created_at, sender_id, sender:profiles(name, avatar_url)')
     .eq('conversation_id', conversationId)
     .order('created_at')
   if (error) throw error

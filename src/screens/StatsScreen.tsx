@@ -2,13 +2,13 @@ import { useState } from 'react'
 import { Card } from '../components/ui'
 import { useApp } from '../context/AppContext'
 import { useQuery } from '../lib/useQuery'
-import { fetchAthleteWeekStats, fetchWellnessAverages, fetchWeeklyStreak, fetchAveragePace, fetchWeeklyAveragePace } from '../lib/queries/stats'
+import { fetchAthleteWeekStats, fetchWellnessAverages, fetchWeeklyStreak, fetchAveragePace, fetchWeeklyAveragePace, fetchWeeklyKm, fetchSessionTypeBreakdown, TYPE_COLORS, type TypeBreakdown } from '../lib/queries/stats'
 import { fetchWeightLogs, type WeightLog } from '../lib/queries/profileExtras'
-import { fetchDisciplineBreakdown, fetchWeeklyLoad, type DisciplineBreakdown } from '../lib/queries/crossTraining'
+import { fetchDisciplineBreakdown, fetchWeeklyLoad, fetchDisciplineTotals, type DisciplineBreakdown, type DisciplineTotal } from '../lib/queries/crossTraining'
 import {
   fetchPersonalRecords, createPersonalRecord, updatePersonalRecord, deletePersonalRecord, type PersonalRecord,
 } from '../lib/queries/profileExtras'
-import { DonutChart, LoadChart, AreaTrendChart } from '../components/charts'
+import { DonutChart, LoadChart, AreaTrendChart, GenericDonutChart } from '../components/charts'
 
 function startOfWeek(d: Date) {
   const day = (d.getDay() + 6) % 7
@@ -113,6 +113,18 @@ export default function StatsScreen() {
   )
   const { data: load } = useQuery(
     () => (profile ? fetchWeeklyLoad(profile.id) : Promise.resolve([])),
+    [profile?.id],
+  )
+  const { data: typeBreakdown } = useQuery<TypeBreakdown[]>(
+    () => (profile ? fetchSessionTypeBreakdown(profile.id, monthAgo, new Date().toISOString()) : Promise.resolve([])),
+    [profile?.id],
+  )
+  const { data: disciplineTotals } = useQuery<DisciplineTotal[]>(
+    () => (profile ? fetchDisciplineTotals(profile.id) : Promise.resolve([])),
+    [profile?.id],
+  )
+  const { data: weeklyKm } = useQuery(
+    () => (profile ? fetchWeeklyKm(profile.id, 4) : Promise.resolve([])),
     [profile?.id],
   )
 
@@ -240,6 +252,33 @@ export default function StatsScreen() {
             </div>
           </Card>
 
+          {/* Km par semaine */}
+          <Card>
+            <p className="text-sm font-semibold mb-3" style={{ color: 'var(--text-1)' }}>Kilomètres par semaine · 1 mois</p>
+            {!weeklyKm?.some((w) => w.value > 0) ? (
+              <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Pas encore de km enregistrés.</p>
+            ) : (
+              <AreaTrendChart data={weeklyKm} color="#F2C400" unit="km" />
+            )}
+          </Card>
+
+          {/* Vélo & autres sports */}
+          {!!disciplineTotals?.length && (
+            <Card>
+              <p className="text-sm font-semibold mb-3" style={{ color: 'var(--text-1)' }}>Vélo & autres sports</p>
+              <div className="flex flex-wrap gap-4">
+                {disciplineTotals.map((d) => (
+                  <div key={d.discipline}>
+                    <p className="text-xl font-bold" style={{ color: 'var(--text-1)' }}>
+                      {d.km > 0 ? `${d.km.toFixed(1)} km` : `${d.sessions} séance${d.sessions > 1 ? 's' : ''}`}
+                    </p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>{d.discipline}</p>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
           {/* Ce mois */}
           <Card>
             <p className="text-sm font-semibold mb-3" style={{ color: 'var(--text-1)' }}>Ce mois-ci</p>
@@ -293,6 +332,24 @@ export default function StatsScreen() {
               <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Aucune séance enregistrée sur les 30 derniers jours.</p>
             ) : (
               <DonutChart segments={breakdown} />
+            )}
+          </Card>
+
+          <Card>
+            <p className="text-sm font-bold mb-4" style={{ color: 'var(--text-1)' }}>Par type d&apos;entraînement · 30 derniers jours</p>
+            {!typeBreakdown?.length ? (
+              <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Aucune séance enregistrée sur les 30 derniers jours.</p>
+            ) : (
+              <GenericDonutChart segments={typeBreakdown.map((t) => ({ label: t.type, count: t.count }))} colors={TYPE_COLORS} />
+            )}
+          </Card>
+
+          <Card>
+            <p className="text-sm font-bold mb-4" style={{ color: 'var(--text-1)' }}>Par volume de km · 30 derniers jours</p>
+            {!breakdown?.some((d) => d.km > 0) ? (
+              <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Pas encore de km enregistrés sur les 30 derniers jours.</p>
+            ) : (
+              <DonutChart segments={breakdown.filter((d) => d.km > 0)} weightBy="km" />
             )}
           </Card>
 

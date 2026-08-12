@@ -6,9 +6,11 @@ import { useQuery } from '../lib/useQuery'
 import { fetchAthleteSessions, validateSession, logFreeSession, type AthleteSession } from '../lib/queries/sessions'
 import { fetchStravaStatus, connectStrava, syncStrava, fetchStravaActivities, type StravaActivity } from '../lib/queries/strava'
 import { fetchCompetitions, createCompetition, toggleCompetitionDone, deleteCompetition, updateVma, type Competition } from '../lib/queries/profileExtras'
-import { fetchCrossTrainingLogs, createCrossTrainingLog, deleteCrossTrainingLog, fetchWeeklyDisciplineKm, type CrossTrainingLog, type Discipline } from '../lib/queries/crossTraining'
+import { fetchCrossTrainingLogs, createCrossTrainingLog, updateCrossTrainingLog, deleteCrossTrainingLog, fetchWeeklyDisciplineKm, type CrossTrainingLog, type Discipline } from '../lib/queries/crossTraining'
 import { fetchAthleteRaces, type ClubRace, type RaceAssignment } from '../lib/queries/clubRaces'
+import { fetchStrengthMaxes, upsertStrengthMax, deleteStrengthMax, LOAD_PERCENT_TABLE, type StrengthMax } from '../lib/queries/strength'
 import { AreaTrendChart } from '../components/charts'
+import BodyDiagram from '../components/BodyDiagram'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function paceStr(kmh: number): string {
@@ -24,6 +26,23 @@ function splitStr(kmh: number, m: number): string {
   const s = Math.round(sec % 60)
   return `${min}'${s.toString().padStart(2, '0')}"`
 }
+function raceTimeStr(kmh: number, km: number): string {
+  const totalSec = (km / kmh) * 3600
+  const h = Math.floor(totalSec / 3600)
+  const min = Math.floor((totalSec % 3600) / 60)
+  const s = Math.round(totalSec % 60)
+  if (h > 0) return `${h}h${min.toString().padStart(2, '0')}'${s.toString().padStart(2, '0')}"`
+  return `${min}'${s.toString().padStart(2, '0')}"`
+}
+
+const RACE_MARKS = [
+  { label: '1500 m', km: 1.5, pct: 100 },
+  { label: '3000 m', km: 3, pct: 95 },
+  { label: '5000 m', km: 5, pct: 92 },
+  { label: '10 km', km: 10, pct: 88 },
+  { label: 'Semi-marathon', km: 21.097, pct: 84 },
+  { label: 'Marathon', km: 42.195, pct: 78 },
+]
 
 // ── data ─────────────────────────────────────────────────────────────────────
 type Chip = { id: string; label: string; done: boolean; description: string | null; sessionId: string | null; source: 'session' | 'strava' }
@@ -67,10 +86,23 @@ export default function TrainingScreen() {
   const [savingComp, setSavingComp] = useState(false)
   const [crossTab, setCrossTab] = useState<Discipline>('velo')
   const [showAddCross, setShowAddCross] = useState(false)
+  const [editingCrossId, setEditingCrossId] = useState<string | null>(null)
+  const [newCrossDate, setNewCrossDate] = useState(isoDate(now))
+  const [newCrossTimeSlot, setNewCrossTimeSlot] = useState<'matin' | 'apres-midi' | ''>('')
   const [newCrossDuration, setNewCrossDuration] = useState('')
   const [newCrossDistance, setNewCrossDistance] = useState('')
+  const [newCrossAvgSpeed, setNewCrossAvgSpeed] = useState('')
   const [newCrossNotes, setNewCrossNotes] = useState('')
+  const [newCrossZones, setNewCrossZones] = useState<string[]>([])
   const [savingCross, setSavingCross] = useState(false)
+
+  const { data: strengthMaxes, refetch: refetchMaxes } = useQuery<StrengthMax[]>(
+    () => (profile ? fetchStrengthMaxes(profile.id) : Promise.resolve([])),
+    [profile?.id],
+  )
+  const [newExercise, setNewExercise] = useState('')
+  const [newMax, setNewMax] = useState('')
+  const [selectedExercise, setSelectedExercise] = useState<string | null>(null)
 
   const { data: competitions, refetch: refetchCompetitions } = useQuery<Competition[]>(
     () => (profile ? fetchCompetitions(profile.id) : Promise.resolve([])),
@@ -94,19 +126,32 @@ export default function TrainingScreen() {
     [profile?.id],
   )
 
+  function resetCrossForm() {
+    setNewCrossDate(isoDate(now)); setNewCrossTimeSlot(''); setNewCrossDuration(''); setNewCrossDistance('')
+    setNewCrossAvgSpeed(''); setNewCrossNotes(''); setNewCrossZones([]); setEditingCrossId(null)
+  }
+
   async function handleAddCross(discipline: Discipline, refetch: () => void) {
     if (!profile || !newCrossDuration.trim()) return
     setSavingCross(true)
     try {
-      await createCrossTrainingLog(profile.id, {
+      const payload = {
         discipline,
-        date: new Date().toISOString().slice(0, 10),
+        date: newCrossDate,
+        time_slot: newCrossTimeSlot || null,
         duration_min: parseInt(newCrossDuration, 10),
         distance_km: newCrossDistance ? parseFloat(newCrossDistance) : null,
+        avg_speed_kmh: newCrossAvgSpeed ? parseFloat(newCrossAvgSpeed) : null,
         rpe: null,
         notes: newCrossNotes || null,
-      })
-      setNewCrossDuration(''); setNewCrossDistance(''); setNewCrossNotes('')
+        muscle_zones: newCrossZones,
+      }
+      if (editingCrossId) {
+        await updateCrossTrainingLog(editingCrossId, payload)
+      } else {
+        await createCrossTrainingLog(profile.id, payload)
+      }
+      resetCrossForm()
       setShowAddCross(false)
       refetch()
     } finally {
@@ -114,9 +159,33 @@ export default function TrainingScreen() {
     }
   }
 
+  function handleEditCross(log: CrossTrainingLog) {
+    setEditingCrossId(log.id)
+    setNewCrossDate(log.date)
+    setNewCrossTimeSlot(log.time_slot ?? '')
+    setNewCrossDuration(String(log.duration_min))
+    setNewCrossDistance(log.distance_km !== null ? String(log.distance_km) : '')
+    setNewCrossAvgSpeed(log.avg_speed_kmh !== null ? String(log.avg_speed_kmh) : '')
+    setNewCrossNotes(log.notes ?? '')
+    setNewCrossZones(log.muscle_zones ?? [])
+    setShowAddCross(true)
+  }
+
   async function handleDeleteCross(id: string, refetch: () => void) {
     await deleteCrossTrainingLog(id)
     refetch()
+  }
+
+  async function handleSaveMax() {
+    if (!profile || !newExercise.trim() || !newMax) return
+    await upsertStrengthMax(profile.id, newExercise.trim(), parseFloat(newMax))
+    setNewExercise(''); setNewMax('')
+    await refetchMaxes()
+  }
+
+  async function handleDeleteMax(id: string) {
+    await deleteStrengthMax(id)
+    await refetchMaxes()
   }
 
   function handleVmaChange(next: number) {
@@ -163,6 +232,22 @@ export default function TrainingScreen() {
     return d >= now.getTime() - 7 * 86400000
   })
   const stravaWeekKm = stravaWeek.reduce((sum, a) => sum + a.distance_m / 1000, 0)
+
+  const STRAVA_TYPE_BY_DISCIPLINE: Record<string, string[]> = { velo: ['Ride', 'VirtualRide'], natation: ['Swim'] }
+  const stravaCrossActivities = (stravaActivities ?? []).filter((a) => STRAVA_TYPE_BY_DISCIPLINE[crossTab]?.includes(a.type))
+  const stravaCrossKm = stravaCrossActivities.reduce((s, a) => s + a.distance_m / 1000, 0)
+  const stravaCrossMin = stravaCrossActivities.reduce((s, a) => s + a.moving_time_s / 60, 0)
+
+  const dayIdx0 = (now.getDay() + 6) % 7
+  const trendWeekStart = new Date(now); trendWeekStart.setHours(0, 0, 0, 0); trendWeekStart.setDate(trendWeekStart.getDate() - dayIdx0)
+  const crossTrendMerged = (crossTrend ?? []).map((t, i) => {
+    const wStart = new Date(trendWeekStart.getTime() - (7 - 1 - i) * 7 * 86400000)
+    const wEnd = new Date(wStart.getTime() + 7 * 86400000)
+    const stravaKm = stravaCrossActivities
+      .filter((a) => { const d = new Date(a.start_date).getTime(); return d >= wStart.getTime() && d < wEnd.getTime() })
+      .reduce((s, a) => s + a.distance_m / 1000, 0)
+    return { label: t.label, km: t.km + stravaKm }
+  })
 
   async function handleStravaButton() {
     if (!stravaStatus?.connected) {
@@ -594,70 +679,115 @@ export default function TrainingScreen() {
             ))}
           </div>
 
-          {!!crossLogs?.length && (
+          {(!!crossLogs?.length || !!stravaCrossActivities.length) && (
             <div className="flex items-center gap-6 mb-4 pb-4" style={{ borderBottom: '1px solid var(--border)' }}>
               <div>
-                <p className="text-2xl font-black leading-none" style={{ color: 'var(--text-1)' }}>{crossLogs.length}</p>
+                <p className="text-2xl font-black leading-none" style={{ color: 'var(--text-1)' }}>{(crossLogs?.length ?? 0) + stravaCrossActivities.length}</p>
                 <p className="text-[10px] uppercase tracking-wide font-bold mt-1" style={{ color: 'var(--text-2)' }}>séances</p>
               </div>
               {crossTab !== 'gainage' && (
                 <div>
-                  <p className="text-2xl font-black leading-none" style={{ color: 'var(--text-1)' }}>{crossLogs.reduce((s, l) => s + (l.distance_km ?? 0), 0).toFixed(1)}<span className="text-sm font-semibold ml-1" style={{ color: 'var(--text-2)' }}>km</span></p>
+                  <p className="text-2xl font-black leading-none" style={{ color: 'var(--text-1)' }}>{((crossLogs ?? []).reduce((s, l) => s + (l.distance_km ?? 0), 0) + stravaCrossKm).toFixed(1)}<span className="text-sm font-semibold ml-1" style={{ color: 'var(--text-2)' }}>km</span></p>
                   <p className="text-[10px] uppercase tracking-wide font-bold mt-1" style={{ color: 'var(--text-2)' }}>cumulés</p>
                 </div>
               )}
               <div>
-                <p className="text-2xl font-black leading-none" style={{ color: 'var(--text-1)' }}>{crossLogs.reduce((s, l) => s + l.duration_min, 0)}<span className="text-sm font-semibold ml-1" style={{ color: 'var(--text-2)' }}>min</span></p>
+                <p className="text-2xl font-black leading-none" style={{ color: 'var(--text-1)' }}>{Math.round((crossLogs ?? []).reduce((s, l) => s + l.duration_min, 0) + stravaCrossMin)}<span className="text-sm font-semibold ml-1" style={{ color: 'var(--text-2)' }}>min</span></p>
                 <p className="text-[10px] uppercase tracking-wide font-bold mt-1" style={{ color: 'var(--text-2)' }}>temps total</p>
               </div>
             </div>
           )}
 
-          {crossTab !== 'gainage' && !!crossTrend?.some((t) => t.km > 0) && (
+          {crossTab !== 'gainage' && !!crossTrendMerged.some((t) => t.km > 0) && (
             <div className="mb-4">
               <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--text-2)' }}>Km par semaine · 8 dernières semaines</p>
-              <AreaTrendChart data={crossTrend.map((t) => ({ label: t.label, value: t.km }))} color={crossTab === 'velo' ? '#5B91D8' : '#7B6FD6'} unit="km" />
+              <AreaTrendChart data={crossTrendMerged.map((t) => ({ label: t.label, value: t.km }))} color={crossTab === 'velo' ? '#5B91D8' : '#7B6FD6'} unit="km" />
             </div>
           )}
 
           {showAddCross && (
             <div className="mb-4 p-3 rounded-xl space-y-2" style={{ background: 'var(--surface2)' }}>
               <div className="grid grid-cols-2 gap-2">
+                <input type="date" value={newCrossDate} onChange={(e) => setNewCrossDate(e.target.value)}
+                  className="rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+                <div className="flex gap-1 p-0.5 rounded-[10px]" style={{ background: 'var(--card)' }}>
+                  {(['matin', 'apres-midi'] as const).map((slot) => (
+                    <button key={slot} type="button" onClick={() => setNewCrossTimeSlot(newCrossTimeSlot === slot ? '' : slot)}
+                      className="flex-1 py-1.5 rounded-lg text-[11px] font-bold capitalize"
+                      style={{ background: newCrossTimeSlot === slot ? '#F2C400' : 'transparent', color: newCrossTimeSlot === slot ? '#0E0E0D' : 'var(--text-2)' }}>
+                      {slot === 'matin' ? 'Matin' : 'Après-midi'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
                 <input value={newCrossDuration} onChange={(e) => setNewCrossDuration(e.target.value)} placeholder="Durée (min)" inputMode="numeric"
                   className="rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
-                <input value={newCrossDistance} onChange={(e) => setNewCrossDistance(e.target.value)} placeholder="Distance km (option.)"
-                  className="rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+                {crossTab !== 'gainage' && (
+                  <input value={newCrossDistance} onChange={(e) => setNewCrossDistance(e.target.value)} placeholder="Distance km (option.)"
+                    className="rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+                )}
               </div>
+              {crossTab === 'velo' && (
+                <input value={newCrossAvgSpeed} onChange={(e) => setNewCrossAvgSpeed(e.target.value)} placeholder="Vitesse moyenne (km/h, option.)" inputMode="decimal"
+                  className="w-full rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+              )}
+              {crossTab === 'gainage' && (
+                <div className="py-2">
+                  <p className="text-[10px] uppercase tracking-widest font-bold mb-2" style={{ color: 'var(--text-2)' }}>Zones travaillées</p>
+                  <BodyDiagram selected={newCrossZones} onToggle={(z) => setNewCrossZones((p) => p.includes(z) ? p.filter((x) => x !== z) : [...p, z])} />
+                </div>
+              )}
               <input value={newCrossNotes} onChange={(e) => setNewCrossNotes(e.target.value)} placeholder="Notes (optionnel)"
                 className="w-full rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
               <div className="flex gap-2">
                 <button onClick={() => handleAddCross(crossTab, refetchCrossLogs)} disabled={savingCross || !newCrossDuration.trim()}
                   className="text-xs font-bold px-3 py-1.5 rounded-[10px] disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
-                  {savingCross ? '…' : 'Ajouter'}
+                  {savingCross ? '…' : editingCrossId ? 'Enregistrer' : 'Ajouter'}
                 </button>
-                <button onClick={() => setShowAddCross(false)} className="text-xs font-semibold px-3 py-1.5 rounded-[10px]" style={{ color: 'var(--text-2)' }}>Annuler</button>
+                <button onClick={() => { setShowAddCross(false); resetCrossForm() }} className="text-xs font-semibold px-3 py-1.5 rounded-[10px]" style={{ color: 'var(--text-2)' }}>Annuler</button>
               </div>
             </div>
           )}
 
-          {!crossLogs?.length ? (
+          {!crossLogs?.length && !stravaCrossActivities.length ? (
             <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Aucune séance enregistrée.</p>
           ) : (
             <div className="space-y-0">
-              {crossLogs.map((log) => (
-                <div key={log.id} className="flex items-center justify-between py-2.5 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
-                  <span className="text-sm" style={{ color: 'var(--text-2)' }}>{new Date(log.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</span>
-                  <span className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>
-                    {log.distance_km ? `${log.distance_km} km · ` : ''}{log.duration_min} min
+              {stravaCrossActivities.map((a) => (
+                <div key={a.id} className="w-full flex items-center justify-between py-2.5 border-b last:border-b-0 text-left" style={{ borderColor: 'var(--border)' }}>
+                  <div className="min-w-0">
+                    <span className="text-sm block truncate" style={{ color: 'var(--text-2)' }}>
+                      {new Date(a.start_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} · {a.name}
+                    </span>
+                  </div>
+                  <span className="text-sm font-semibold shrink-0 mx-2" style={{ color: 'var(--text-1)' }}>
+                    {(a.distance_m / 1000).toFixed(1)} km · {Math.round(a.moving_time_s / 60)} min
                   </span>
-                  <button onClick={() => handleDeleteCross(log.id, refetchCrossLogs)} className="text-xs font-semibold text-[#E4574A]">×</button>
+                  <span className="text-[10px] font-bold shrink-0" style={{ color: '#FC5200' }}>Strava</span>
                 </div>
+              ))}
+              {(crossLogs ?? []).map((log) => (
+                <button key={log.id} onClick={() => handleEditCross(log)}
+                  className="w-full flex items-center justify-between py-2.5 border-b last:border-b-0 text-left" style={{ borderColor: 'var(--border)' }}>
+                  <div className="min-w-0">
+                    <span className="text-sm block" style={{ color: 'var(--text-2)' }}>
+                      {new Date(log.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                      {log.time_slot ? ` · ${log.time_slot === 'matin' ? 'Matin' : 'Après-midi'}` : ''}
+                    </span>
+                    {!!log.muscle_zones?.length && <span className="text-xs truncate" style={{ color: 'var(--text-2)' }}>{log.muscle_zones.join(', ')}</span>}
+                  </div>
+                  <span className="text-sm font-semibold shrink-0 mx-2" style={{ color: 'var(--text-1)' }}>
+                    {log.distance_km ? `${log.distance_km} km · ` : ''}{log.avg_speed_kmh ? `${log.avg_speed_kmh} km/h · ` : ''}{log.duration_min} min
+                  </span>
+                  <span onClick={(e) => { e.stopPropagation(); handleDeleteCross(log.id, refetchCrossLogs) }} className="text-xs font-semibold text-[#E4574A] shrink-0">×</span>
+                </button>
               ))}
             </div>
           )}
 
           {!showAddCross && (
-            <button onClick={() => setShowAddCross(true)} className="mt-3 text-sm font-semibold text-[#F2C400] flex items-center gap-1.5">
+            <button onClick={() => { resetCrossForm(); setShowAddCross(true) }} className="mt-3 text-sm font-semibold text-[#F2C400] flex items-center gap-1.5">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1.5V10.5M1.5 6H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
               Ajouter une séance {crossTab === 'velo' ? 'vélo' : crossTab === 'natation' ? 'natation' : 'gainage'}
             </button>
@@ -735,9 +865,73 @@ export default function TrainingScreen() {
                   )
                 })}
               </div>
+
+              <p className="text-base font-bold mb-3 mt-6" style={{ color: 'var(--text-1)' }}>Repères de course</p>
+              <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                <div className="grid text-[9px] font-bold uppercase tracking-wider px-3 py-2"
+                  style={{ gridTemplateColumns: '1fr 80px 90px', background: 'var(--surface2)', color: 'var(--text-2)' }}>
+                  <span>Distance</span><span className="text-right">% VMA typique</span><span className="text-right">Temps estimé</span>
+                </div>
+                {RACE_MARKS.map((r, i) => (
+                  <div key={r.label} className="grid items-center px-3 py-2.5 border-b last:border-b-0"
+                    style={{ gridTemplateColumns: '1fr 80px 90px', borderColor: 'var(--border)', background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)' }}>
+                    <span className="text-xs font-semibold" style={{ color: 'var(--text-1)' }}>{r.label}</span>
+                    <span className="text-xs text-right" style={{ color: 'var(--text-2)' }}>{r.pct}%</span>
+                    <span className="text-xs font-mono text-right font-bold" style={{ color: '#F2C400' }}>{raceTimeStr((r.pct / 100) * vma, r.km)}</span>
+                  </div>
+                ))}
+              </div>
             </>
           ) : (
             <>
+              <p className="text-base font-bold mb-3" style={{ color: 'var(--text-1)' }}>Maximums</p>
+              <div className="space-y-1.5 mb-4">
+                {!strengthMaxes?.length ? (
+                  <p className="text-sm" style={{ color: 'var(--text-2)' }}>Aucun maximum enregistré.</p>
+                ) : (
+                  strengthMaxes.map((m) => (
+                    <button key={m.id} onClick={() => setSelectedExercise(selectedExercise === m.exercise ? null : m.exercise)}
+                      className="w-full flex items-center justify-between py-2 px-3 rounded-xl"
+                      style={{ background: selectedExercise === m.exercise ? 'rgba(242,196,0,0.12)' : 'var(--surface2)' }}>
+                      <span className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>{m.exercise}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold" style={{ color: '#F2C400' }}>{m.max_kg} kg</span>
+                        <span onClick={(e) => { e.stopPropagation(); handleDeleteMax(m.id) }} className="text-xs font-semibold text-[#E4574A]">×</span>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+              <div className="flex gap-2 mb-2">
+                <input value={newExercise} onChange={(e) => setNewExercise(e.target.value)} placeholder="Exercice (ex: Squat)"
+                  className="flex-1 rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+                <input value={newMax} onChange={(e) => setNewMax(e.target.value)} placeholder="Max kg" inputMode="decimal"
+                  className="w-24 rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+                <button onClick={handleSaveMax} disabled={!newExercise.trim() || !newMax}
+                  className="text-xs font-bold px-3 py-2 rounded-[10px] disabled:opacity-50 shrink-0" style={{ background: '#F2C400', color: '#0E0E0D' }}>OK</button>
+              </div>
+
+              {selectedExercise && (() => {
+                const max = strengthMaxes?.find((m) => m.exercise === selectedExercise)?.max_kg ?? 0
+                return (
+                  <div className="rounded-2xl overflow-hidden mb-5" style={{ border: '1px solid var(--border)' }}>
+                    <div className="grid grid-cols-3 text-[9px] font-bold uppercase tracking-wider px-3 py-2"
+                      style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
+                      <span>% 1RM</span><span className="text-right">Charge</span><span className="text-right">Répétitions</span>
+                    </div>
+                    {LOAD_PERCENT_TABLE.map((row, i) => (
+                      <div key={row.pct} className="grid grid-cols-3 px-3 py-2 border-b last:border-b-0"
+                        style={{ borderColor: 'var(--border)', background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)' }}>
+                        <span className="text-xs font-semibold" style={{ color: 'var(--text-1)' }}>{row.pct}%</span>
+                        <span className="text-xs text-right font-mono" style={{ color: '#F2C400' }}>{((max * row.pct) / 100).toFixed(1)} kg</span>
+                        <span className="text-xs text-right" style={{ color: 'var(--text-2)' }}>{row.reps} reps</span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
+
+              <p className="text-base font-bold mb-3" style={{ color: 'var(--text-1)' }}>Séances</p>
               {!!muscLogs?.length && (
                 <div className="flex items-center gap-6 mb-4 pb-4" style={{ borderBottom: '1px solid var(--border)' }}>
                   <div>
@@ -753,6 +947,25 @@ export default function TrainingScreen() {
 
               {showAddCross && (
                 <div className="mb-4 p-4 rounded-2xl space-y-3" style={{ background: 'var(--surface2)', border: '1px solid var(--border)' }}>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] uppercase tracking-widest font-bold mb-1.5 block" style={{ color: 'var(--text-2)' }}>Date</label>
+                      <input type="date" value={newCrossDate} onChange={(e) => setNewCrossDate(e.target.value)}
+                        className="w-full rounded-[10px] px-3 py-2.5 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
+                    </div>
+                    <div>
+                      <label className="text-[10px] uppercase tracking-widest font-bold mb-1.5 block" style={{ color: 'var(--text-2)' }}>Créneau</label>
+                      <div className="flex gap-1 p-0.5 rounded-[10px]" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+                        {(['matin', 'apres-midi'] as const).map((slot) => (
+                          <button key={slot} type="button" onClick={() => setNewCrossTimeSlot(newCrossTimeSlot === slot ? '' : slot)}
+                            className="flex-1 py-1.5 rounded-lg text-[11px] font-bold capitalize"
+                            style={{ background: newCrossTimeSlot === slot ? '#F2C400' : 'transparent', color: newCrossTimeSlot === slot ? '#0E0E0D' : 'var(--text-2)' }}>
+                            {slot === 'matin' ? 'Matin' : 'Après-midi'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                   <div>
                     <label className="text-[10px] uppercase tracking-widest font-bold mb-1.5 block" style={{ color: 'var(--text-2)' }}>Durée (min)</label>
                     <input value={newCrossDuration} onChange={(e) => setNewCrossDuration(e.target.value)} placeholder="Ex: 45" inputMode="numeric"
@@ -766,9 +979,9 @@ export default function TrainingScreen() {
                   <div className="flex gap-2 pt-1">
                     <button onClick={() => handleAddCross('musculation', refetchMuscLogs)} disabled={savingCross || !newCrossDuration.trim()}
                       className="text-xs font-bold px-4 py-2 rounded-[10px] disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
-                      {savingCross ? '…' : 'Ajouter'}
+                      {savingCross ? '…' : editingCrossId ? 'Enregistrer' : 'Ajouter'}
                     </button>
-                    <button onClick={() => setShowAddCross(false)} className="text-xs font-semibold px-4 py-2 rounded-[10px]" style={{ color: 'var(--text-2)' }}>Annuler</button>
+                    <button onClick={() => { setShowAddCross(false); resetCrossForm() }} className="text-xs font-semibold px-4 py-2 rounded-[10px]" style={{ color: 'var(--text-2)' }}>Annuler</button>
                   </div>
                 </div>
               )}
@@ -782,7 +995,8 @@ export default function TrainingScreen() {
               ) : (
                 <div className="space-y-2">
                   {muscLogs.map((log) => (
-                    <div key={log.id} className="flex items-center gap-3 py-2.5 px-3 rounded-2xl" style={{ background: 'var(--surface2)' }}>
+                    <div key={log.id} onClick={() => handleEditCross(log)}
+                      className="flex items-center gap-3 py-2.5 px-3 rounded-2xl cursor-pointer" style={{ background: 'var(--surface2)' }}>
                       <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(228,87,74,0.12)' }}>
                         <svg width="15" height="15" viewBox="0 0 22 22" fill="none">
                           <path d="M3 11H5M17 11H19M5 11V8H8V14H5V11ZM17 11V8H14V14H17V11ZM8 11H14" stroke="#E4574A" strokeWidth="1.5" strokeLinecap="round" />
@@ -790,11 +1004,12 @@ export default function TrainingScreen() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <span className="text-sm font-semibold block" style={{ color: 'var(--text-1)' }}>
-                          {new Date(log.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} · {log.duration_min} min
+                          {new Date(log.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                          {log.time_slot ? ` · ${log.time_slot === 'matin' ? 'Matin' : 'Après-midi'}` : ''} · {log.duration_min} min
                         </span>
                         {log.notes && <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-2)' }}>{log.notes}</p>}
                       </div>
-                      <button onClick={() => handleDeleteCross(log.id, refetchMuscLogs)}
+                      <button onClick={(e) => { e.stopPropagation(); handleDeleteCross(log.id, refetchMuscLogs) }}
                         className="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style={{ color: 'var(--text-2)' }}>
                         <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
                       </button>
@@ -803,7 +1018,7 @@ export default function TrainingScreen() {
                 </div>
               )}
               {!showAddCross && (
-                <button onClick={() => setShowAddCross(true)} className="mt-3 w-full py-2.5 rounded-xl text-sm font-semibold text-[#F2C400] flex items-center justify-center gap-1.5"
+                <button onClick={() => { resetCrossForm(); setShowAddCross(true) }} className="mt-3 w-full py-2.5 rounded-xl text-sm font-semibold text-[#F2C400] flex items-center justify-center gap-1.5"
                   style={{ border: '1px dashed rgba(242,196,0,0.35)' }}>
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1.5V10.5M1.5 6H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
                   Ajouter une séance musculation
