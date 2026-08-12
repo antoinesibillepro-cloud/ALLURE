@@ -49,7 +49,7 @@ export interface AthleteSession {
   distance_km: number | null
   vma_percent: number | null
   scheduled_at: string
-  completion: { status: string; rpe: number | null } | null
+  completion: { id: string; status: string; rpe: number | null; actual_distance_km: number | null; actual_duration_min: number | null } | null
 }
 
 /** Sessions assigned to any group the athlete belongs to, in [from, to). */
@@ -82,7 +82,7 @@ export async function fetchAthleteSessions(profileId: string, from: string, to: 
 
   const { data: completions, error: compErr } = await supabase
     .from('session_completions')
-    .select('session_id, status, rpe')
+    .select('id, session_id, status, rpe, actual_distance_km, actual_duration_min')
     .eq('profile_id', profileId)
     .in('session_id', sessionIds)
   if (compErr) throw compErr
@@ -91,11 +91,43 @@ export async function fetchAthleteSessions(profileId: string, from: string, to: 
   return (sessions ?? []).map((s) => ({ ...s, completion: byId.get(s.id) ?? null }))
 }
 
-export async function validateSession(sessionId: string, profileId: string, rpe: number | null, note: string) {
-  const { error } = await supabase
+export async function validateSession(
+  sessionId: string, profileId: string, rpe: number | null, note: string,
+  actualDistanceKm?: number | null, actualDurationMin?: number | null,
+): Promise<string> {
+  const { data, error } = await supabase
     .from('session_completions')
-    .upsert({ session_id: sessionId, profile_id: profileId, status: 'done', rpe, note, completed_at: new Date().toISOString() })
+    .upsert({
+      session_id: sessionId, profile_id: profileId, status: 'done', rpe, note,
+      actual_distance_km: actualDistanceKm ?? null, actual_duration_min: actualDurationMin ?? null,
+      completed_at: new Date().toISOString(),
+    }, { onConflict: 'session_id,profile_id' })
+    .select('id')
+    .single()
   if (error) throw error
+  return data.id
+}
+
+export interface SessionSplit { id: string; rep_number: number; time_seconds: number }
+
+export async function saveSessionSplits(sessionCompletionId: string, splits: { rep_number: number; time_seconds: number }[]) {
+  const { error: delErr } = await supabase.from('session_splits').delete().eq('session_completion_id', sessionCompletionId)
+  if (delErr) throw delErr
+  if (splits.length === 0) return
+  const { error } = await supabase.from('session_splits').insert(
+    splits.map((s) => ({ session_completion_id: sessionCompletionId, rep_number: s.rep_number, time_seconds: s.time_seconds })),
+  )
+  if (error) throw error
+}
+
+export async function fetchSessionSplits(sessionCompletionId: string): Promise<SessionSplit[]> {
+  const { data, error } = await supabase
+    .from('session_splits')
+    .select('id, rep_number, time_seconds')
+    .eq('session_completion_id', sessionCompletionId)
+    .order('rep_number')
+  if (error) throw error
+  return data
 }
 
 export async function logFreeSession(profileId: string, title: string, distanceKm: number, durationMin: number) {
@@ -113,9 +145,86 @@ export async function logFreeSession(profileId: string, title: string, distanceK
 export async function fetchCoachSessions(clubId: string) {
   const { data, error } = await supabase
     .from('sessions')
-    .select('id, title, type, duration_min, distance_km, vma_percent, scheduled_at, status, session_assignments(group_id, groups(name))')
+    .select('id, title, type, description, duration_min, distance_km, vma_percent, scheduled_at, status, session_assignments(group_id, groups(name))')
     .eq('club_id', clubId)
     .order('scheduled_at', { ascending: false })
   if (error) throw error
   return data
+}
+
+export interface SessionUpdateInput {
+  title?: string
+  type?: string
+  description?: string
+  duration_min?: number
+  distance_km?: number
+  vma_percent?: number
+  scheduled_at?: string
+  status?: 'draft' | 'published'
+}
+
+export async function updateSession(sessionId: string, patch: SessionUpdateInput) {
+  const { error } = await supabase.from('sessions').update(patch).eq('id', sessionId)
+  if (error) throw error
+}
+
+export async function deleteSession(sessionId: string) {
+  const { error } = await supabase.from('sessions').delete().eq('id', sessionId)
+  if (error) throw error
+}
+
+export interface AthleteRealization {
+  profile_id: string
+  name: string
+  status: string
+  rpe: number | null
+  actual_distance_km: number | null
+  actual_duration_min: number | null
+  note: string | null
+  splits: { rep_number: number; time_seconds: number }[]
+}
+
+/** Every club athlete's completion (if any) for a session, with splits. */
+export async function fetchSessionRealizations(sessionId: string, groupIds: string[]): Promise<AthleteRealization[]> {
+  if (groupIds.length === 0) return []
+  const { data: members, error: memErr } = await supabase
+    .from('group_members')
+    .select('profile_id, profiles(id, name)')
+    .in('group_id', groupIds)
+  if (memErr) throw memErr
+  const athletes = new Map<string, string>()
+  for (const m of (members ?? []) as unknown as { profile_id: string; profiles: { id: string; name: string } | null }[]) {
+    if (m.profiles) athletes.set(m.profiles.id, m.profiles.name)
+  }
+
+  const { data: completions, error } = await supabase
+    .from('session_completions')
+    .select('id, profile_id, status, rpe, actual_distance_km, actual_duration_min, note')
+    .eq('session_id', sessionId)
+  if (error) throw error
+
+  const completionIds = (completions ?? []).map((c) => c.id)
+  const { data: splitsRows } = completionIds.length
+    ? await supabase.from('session_splits').select('session_completion_id, rep_number, time_seconds').in('session_completion_id', completionIds)
+    : { data: [] }
+  const splitsByCompletion = new Map<string, { rep_number: number; time_seconds: number }[]>()
+  for (const s of splitsRows ?? []) {
+    const arr = splitsByCompletion.get(s.session_completion_id) ?? []
+    arr.push({ rep_number: s.rep_number, time_seconds: s.time_seconds })
+    splitsByCompletion.set(s.session_completion_id, arr)
+  }
+
+  const byProfile = new Map((completions ?? []).map((c) => [c.profile_id, c]))
+  return [...athletes.entries()].map(([id, name]) => {
+    const c = byProfile.get(id)
+    return {
+      profile_id: id, name,
+      status: c?.status ?? 'pending',
+      rpe: c?.rpe ?? null,
+      actual_distance_km: c?.actual_distance_km ?? null,
+      actual_duration_min: c?.actual_duration_min ?? null,
+      note: c?.note ?? null,
+      splits: c ? (splitsByCompletion.get(c.id) ?? []) : [],
+    }
+  })
 }

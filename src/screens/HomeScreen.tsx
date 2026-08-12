@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext'
 import WeeklyRecapModal from '../components/WeeklyRecapModal'
 import AddSessionSheet, { type SessionData } from '../components/AddSessionSheet'
 import { useQuery } from '../lib/useQuery'
-import { fetchAthleteSessions, validateSession, logFreeSession, type AthleteSession } from '../lib/queries/sessions'
+import { fetchAthleteSessions, validateSession, logFreeSession, saveSessionSplits, type AthleteSession } from '../lib/queries/sessions'
 import { fetchTodayCheckin, saveCheckin, type DailyCheckin } from '../lib/queries/checkins'
 import { fetchAthleteWeekStats, fetchAthleteTotalKm, fetchLastActivity } from '../lib/queries/stats'
 import { fetchNextCompetition, fetchMyGroups, fetchWeightLogs, saveWeightLog, type WeightLog } from '../lib/queries/profileExtras'
@@ -191,7 +191,7 @@ export default function HomeScreen() {
     [profile?.id, weekStart],
   )
 
-  const { data: weekSessions } = useQuery<AthleteSession[]>(
+  const { data: weekSessions, refetch: refetchWeekSessions } = useQuery<AthleteSession[]>(
     () => (profile ? fetchAthleteSessions(profile.id, weekStart, weekEnd) : Promise.resolve([])),
     [profile?.id, weekStart],
   )
@@ -256,13 +256,34 @@ export default function HomeScreen() {
 
   const [showRpe, setShowRpe] = useState(false)
 
-  async function handleValidateSession(rpe: number) {
-    if (!profile || !todaySession) return
+  const selectedDate = weekDates[selectedDay] ?? today
+  const selectedDateIso = isoDate(selectedDate)
+  const selectedIsToday = selectedDateIso === todayIso
+  const selectedSession = (weekSessions ?? []).find((s) => isoDate(new Date(s.scheduled_at)) === selectedDateIso) ?? null
+
+  const [rpe, setRpe] = useState<number | null>(null)
+  const [actualDistance, setActualDistance] = useState('')
+  const [actualDuration, setActualDuration] = useState('')
+  const [splits, setSplits] = useState<string[]>([])
+
+  function resetValidationForm() {
+    setRpe(null); setActualDistance(''); setActualDuration(''); setSplits([])
+  }
+
+  async function handleValidateSession() {
+    if (!profile || !selectedSession || rpe === null) return
     setValidating(true)
     try {
-      await validateSession(todaySession.id, profile.id, rpe, '')
-      await refetchToday()
+      const distanceKm = actualDistance ? parseFloat(actualDistance.replace(',', '.')) : null
+      const durationMin = actualDuration ? parseInt(actualDuration, 10) : null
+      const completionId = await validateSession(selectedSession.id, profile.id, rpe, '', distanceKm, durationMin)
+      const parsedSplits = splits
+        .map((s, i) => ({ rep_number: i + 1, time_seconds: parseFloat(s.replace(',', '.')) }))
+        .filter((s) => !Number.isNaN(s.time_seconds) && s.time_seconds > 0)
+      if (parsedSplits.length > 0) await saveSessionSplits(completionId, parsedSplits)
+      await Promise.all([refetchToday(), refetchWeekSessions()])
       setShowRpe(false)
+      resetValidationForm()
     } finally {
       setValidating(false)
     }
@@ -289,19 +310,73 @@ export default function HomeScreen() {
   )
 
   const RPE_OPTIONS = [{ v: 2, l: 'Facile' }, { v: 4, l: 'Modéré' }, { v: 6, l: 'Soutenu' }, { v: 8, l: 'Dur' }, { v: 10, l: 'Max' }]
+  const validationPace = (() => {
+    const d = actualDistance ? parseFloat(actualDistance.replace(',', '.')) : null
+    const m = actualDuration ? parseInt(actualDuration, 10) : null
+    if (!d || !m || d <= 0) return null
+    const secPerKm = (m * 60) / d
+    const mm = Math.floor(secPerKm / 60)
+    const ss = Math.round(secPerKm % 60)
+    return `${mm}'${ss.toString().padStart(2, '0')}"/km`
+  })()
   function RpePicker() {
     return (
-      <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
-        <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-2)' }}>Ressenti de la séance (RPE)</p>
-        <div className="flex gap-1.5">
-          {RPE_OPTIONS.map((o) => (
-            <button key={o.v} disabled={validating} onClick={() => handleValidateSession(o.v)}
-              className="flex-1 py-2 rounded-[10px] text-[10px] font-bold disabled:opacity-50"
-              style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
-              {o.l}
-            </button>
-          ))}
+      <div className="mt-4 pt-4 space-y-4" style={{ borderTop: '1px solid var(--border)' }}>
+        <div>
+          <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-2)' }}>Ressenti de la séance (RPE)</p>
+          <div className="flex gap-1.5">
+            {RPE_OPTIONS.map((o) => (
+              <button key={o.v} disabled={validating} onClick={() => setRpe(o.v)}
+                className="flex-1 py-2 rounded-[10px] text-[10px] font-bold disabled:opacity-50"
+                style={{ background: rpe === o.v ? '#F2C400' : 'var(--surface2)', color: rpe === o.v ? '#0E0E0D' : 'var(--text-1)' }}>
+                {o.l}
+              </button>
+            ))}
+          </div>
         </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-2)' }}>Distance réelle (km)</p>
+            <input value={actualDistance} onChange={(e) => setActualDistance(e.target.value)} inputMode="decimal"
+              placeholder={selectedSession?.distance_km ? String(selectedSession.distance_km) : '—'}
+              className="w-full px-3 py-2 rounded-[10px] text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-2)' }}>Durée réelle (min)</p>
+            <input value={actualDuration} onChange={(e) => setActualDuration(e.target.value)} inputMode="numeric"
+              placeholder={selectedSession?.duration_min ? String(selectedSession.duration_min) : '—'}
+              className="w-full px-3 py-2 rounded-[10px] text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+          </div>
+        </div>
+        {validationPace && (
+          <p className="text-xs -mt-2" style={{ color: '#F2C400' }}>Allure moyenne : <span className="font-bold">{validationPace}</span></p>
+        )}
+
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>Temps par répétition (optionnel)</p>
+            <button onClick={() => setSplits((p) => [...p, ''])} className="text-xs font-bold" style={{ color: '#F2C400' }}>+ Ajouter</button>
+          </div>
+          {splits.length > 0 && (
+            <div className="space-y-1.5">
+              {splits.map((s, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="text-xs w-14 shrink-0" style={{ color: 'var(--text-2)' }}>Rép. {i + 1}</span>
+                  <input value={s} onChange={(e) => setSplits((p) => p.map((v, j) => j === i ? e.target.value : v))}
+                    placeholder="secondes" inputMode="decimal"
+                    className="flex-1 px-3 py-1.5 rounded-[10px] text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+                  <button onClick={() => setSplits((p) => p.filter((_, j) => j !== i))} className="text-xs" style={{ color: '#E4574A' }}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <button onClick={handleValidateSession} disabled={validating || rpe === null}
+          className="w-full py-3 rounded-[12px] text-sm font-bold disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+          {validating ? 'Enregistrement…' : 'Enregistrer la séance'}
+        </button>
       </div>
     )
   }
@@ -356,29 +431,29 @@ export default function HomeScreen() {
     </Card>
   )
 
-  const isDone = todaySession?.completion?.status === 'done'
+  const isDone = selectedSession?.completion?.status === 'done'
   const sessionCard = (
     <Card lift>
       <div className="flex items-center justify-between mb-3">
-        <SectionLabel>Séance du jour</SectionLabel>
-        {todaySession && (
+        <SectionLabel>{selectedIsToday ? 'Séance du jour' : `Séance du ${selectedDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}`}</SectionLabel>
+        {selectedSession && (
           <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
             style={{ background: isDone ? 'rgba(94,186,101,0.15)' : 'rgba(242,196,0,0.15)', color: isDone ? '#5EBA65' : '#F2C400' }}>
             {isDone ? 'Faite' : 'À faire'}
           </span>
         )}
       </div>
-      {!todaySession ? (
-        <p className="text-sm py-4" style={{ color: 'var(--text-2)' }}>Aucune séance programmée aujourd&apos;hui.</p>
+      {!selectedSession ? (
+        <p className="text-sm py-4" style={{ color: 'var(--text-2)' }}>Aucune séance programmée {selectedIsToday ? "aujourd'hui" : 'ce jour-là'}.</p>
       ) : (
         <>
-          <p className="text-lg font-bold" style={{ color: 'var(--text-1)' }}>{todaySession.title}</p>
-          {todaySession.description && <p className="text-sm mt-0.5" style={{ color: 'var(--text-2)' }}>{todaySession.description}</p>}
+          <p className="text-lg font-bold" style={{ color: 'var(--text-1)' }}>{selectedSession.title}</p>
+          {selectedSession.description && <p className="text-sm mt-0.5" style={{ color: 'var(--text-2)' }}>{selectedSession.description}</p>}
           <div className="flex gap-6 mt-4 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
             {[
-              { label: 'Distance', value: todaySession.distance_km ? `${todaySession.distance_km} km` : '—' },
-              { label: '%VMA', value: todaySession.vma_percent ? `${todaySession.vma_percent}%` : '—' },
-              { label: 'Durée', value: todaySession.duration_min ? `${todaySession.duration_min} min` : '—' },
+              { label: 'Distance', value: selectedSession.distance_km ? `${selectedSession.distance_km} km` : '—' },
+              { label: '%VMA', value: selectedSession.vma_percent ? `${selectedSession.vma_percent}%` : '—' },
+              { label: 'Durée', value: selectedSession.duration_min ? `${selectedSession.duration_min} min` : '—' },
             ].map((s) => (
               <div key={s.label}>
                 <p className="text-[9px] uppercase tracking-widest font-semibold mb-1" style={{ color: 'var(--text-2)' }}>{s.label}</p>
@@ -691,11 +766,11 @@ export default function HomeScreen() {
                     <div>
                       <p className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>{athleteName}</p>
                       <p className="text-xs" style={{ color: 'var(--text-2)' }}>
-                        {today.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                        {selectedDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
                       </p>
                     </div>
                   </div>
-                  {todaySession && (
+                  {selectedSession && (
                     <span className="text-[10px] font-bold px-2.5 py-1 rounded-full"
                       style={{ background: isDone ? 'rgba(94,186,101,0.12)' : 'rgba(242,196,0,0.12)', color: isDone ? '#5EBA65' : '#F2C400', border: `1px solid ${isDone ? 'rgba(94,186,101,0.2)' : 'rgba(242,196,0,0.2)'}` }}>
                       {isDone ? 'FAITE' : 'PLANIFIÉE'}
@@ -703,8 +778,8 @@ export default function HomeScreen() {
                   )}
                 </div>
 
-                {!todaySession ? (
-                  <p className="px-4 pb-5 text-sm" style={{ color: 'var(--text-2)' }}>Aucune séance programmée aujourd&apos;hui.</p>
+                {!selectedSession ? (
+                  <p className="px-4 pb-5 text-sm" style={{ color: 'var(--text-2)' }}>Aucune séance programmée {selectedIsToday ? "aujourd'hui" : 'ce jour-là'}.</p>
                 ) : (
                   <>
                     {/* Activity title */}
@@ -714,17 +789,17 @@ export default function HomeScreen() {
                           <path d="M4 12L7 6L9.5 9L11.5 6L13.5 8" stroke="var(--text-2)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
                           <circle cx="12" cy="4" r="1.8" stroke="var(--text-2)" strokeWidth="1.2" />
                         </svg>
-                        <p className="text-xl font-black" style={{ color: 'var(--text-1)' }}>{todaySession.title}</p>
+                        <p className="text-xl font-black" style={{ color: 'var(--text-1)' }}>{selectedSession.title}</p>
                       </div>
-                      {todaySession.description && <p className="text-sm mt-0.5" style={{ color: 'var(--text-2)' }}>{todaySession.description}</p>}
+                      {selectedSession.description && <p className="text-sm mt-0.5" style={{ color: 'var(--text-2)' }}>{selectedSession.description}</p>}
                     </div>
 
                     {/* Stats row */}
                     <div className="px-4 pb-4 flex items-center gap-10">
                       {[
-                        { label: 'Distance', value: todaySession.distance_km ? `${todaySession.distance_km} km` : '—' },
-                        { label: 'Durée est.', value: todaySession.duration_min ? `${todaySession.duration_min} min` : '—' },
-                        { label: 'Intensité', value: todaySession.vma_percent ? `VMA ${todaySession.vma_percent}%` : '—', accent: true },
+                        { label: 'Distance', value: selectedSession.distance_km ? `${selectedSession.distance_km} km` : '—' },
+                        { label: 'Durée est.', value: selectedSession.duration_min ? `${selectedSession.duration_min} min` : '—' },
+                        { label: 'Intensité', value: selectedSession.vma_percent ? `VMA ${selectedSession.vma_percent}%` : '—', accent: true },
                       ].map((s) => (
                         <div key={s.label}>
                           <p className="text-[11px] font-semibold mb-0.5" style={{ color: 'var(--text-2)' }}>{s.label}</p>

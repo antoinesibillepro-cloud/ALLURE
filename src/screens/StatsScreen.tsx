@@ -2,13 +2,13 @@ import { useState } from 'react'
 import { Card } from '../components/ui'
 import { useApp } from '../context/AppContext'
 import { useQuery } from '../lib/useQuery'
-import { fetchAthleteWeekStats, fetchWellnessAverages, fetchWeeklyStreak, fetchAveragePace } from '../lib/queries/stats'
+import { fetchAthleteWeekStats, fetchWellnessAverages, fetchWeeklyStreak, fetchAveragePace, fetchWeeklyAveragePace } from '../lib/queries/stats'
 import { fetchWeightLogs, type WeightLog } from '../lib/queries/profileExtras'
 import { fetchDisciplineBreakdown, fetchWeeklyLoad, type DisciplineBreakdown } from '../lib/queries/crossTraining'
 import {
   fetchPersonalRecords, createPersonalRecord, updatePersonalRecord, deletePersonalRecord, type PersonalRecord,
 } from '../lib/queries/profileExtras'
-import { DonutChart, LoadChart } from '../components/charts'
+import { DonutChart, LoadChart, AreaTrendChart } from '../components/charts'
 
 function startOfWeek(d: Date) {
   const day = (d.getDay() + 6) % 7
@@ -130,6 +130,10 @@ export default function StatsScreen() {
   const { data: avgPace } = useQuery(
     () => (profile ? fetchAveragePace(profile.id, monthStart, nextMonthStart) : Promise.resolve(null)),
     [profile?.id, monthStart],
+  )
+  const { data: paceTrend } = useQuery(
+    () => (profile ? fetchWeeklyAveragePace(profile.id) : Promise.resolve([])),
+    [profile?.id],
   )
   function paceStr(minPerKm: number) {
     const m = Math.floor(minPerKm)
@@ -296,6 +300,16 @@ export default function StatsScreen() {
             <p className="text-base font-bold mb-0.5" style={{ color: 'var(--text-1)' }}>Charge d&apos;entraînement</p>
             <p className="text-xs mb-4" style={{ color: 'var(--text-2)' }}>RPE × durée · 8 dernières semaines</p>
             {load && <LoadChart data={load} />}
+          </Card>
+
+          <Card>
+            <p className="text-base font-bold mb-0.5" style={{ color: 'var(--text-1)' }}>Allure moyenne</p>
+            <p className="text-xs mb-4" style={{ color: 'var(--text-2)' }}>Min/km réalisées · 8 dernières semaines</p>
+            {!paceTrend?.some((p) => p.value > 0) ? (
+              <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Pas encore d&apos;allure enregistrée.</p>
+            ) : (
+              <AreaTrendChart data={paceTrend} color="#5B91D8" unit="'" />
+            )}
           </Card>
         </div>
       )}

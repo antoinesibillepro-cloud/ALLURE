@@ -14,6 +14,69 @@ export type Database = {
   }
   public: {
     Tables: {
+      athlete_badges: {
+        Row: {
+          badge_id: string
+          earned_at: string
+          profile_id: string
+        }
+        Insert: {
+          badge_id: string
+          earned_at?: string
+          profile_id: string
+        }
+        Update: {
+          badge_id?: string
+          earned_at?: string
+          profile_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "athlete_badges_badge_id_fkey"
+            columns: ["badge_id"]
+            isOneToOne: false
+            referencedRelation: "badges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "athlete_badges_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      badges: {
+        Row: {
+          code: string
+          criteria_kind: string
+          criteria_value: number
+          description: string
+          icon_key: string
+          id: string
+          title: string
+        }
+        Insert: {
+          code: string
+          criteria_kind: string
+          criteria_value: number
+          description: string
+          icon_key: string
+          id?: string
+          title: string
+        }
+        Update: {
+          code?: string
+          criteria_kind?: string
+          criteria_value?: number
+          description?: string
+          icon_key?: string
+          id?: string
+          title?: string
+        }
+        Relationships: []
+      }
       challenges: {
         Row: {
           club_id: string
@@ -695,6 +758,8 @@ export type Database = {
       }
       session_completions: {
         Row: {
+          actual_distance_km: number | null
+          actual_duration_min: number | null
           completed_at: string
           free_session_distance_km: number | null
           free_session_duration_min: number | null
@@ -707,6 +772,8 @@ export type Database = {
           status: Database["public"]["Enums"]["completion_status"]
         }
         Insert: {
+          actual_distance_km?: number | null
+          actual_duration_min?: number | null
           completed_at?: string
           free_session_distance_km?: number | null
           free_session_duration_min?: number | null
@@ -719,6 +786,8 @@ export type Database = {
           status: Database["public"]["Enums"]["completion_status"]
         }
         Update: {
+          actual_distance_km?: number | null
+          actual_duration_min?: number | null
           completed_at?: string
           free_session_distance_km?: number | null
           free_session_duration_min?: number | null
@@ -743,6 +812,38 @@ export type Database = {
             columns: ["session_id"]
             isOneToOne: false
             referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      session_splits: {
+        Row: {
+          created_at: string
+          id: string
+          rep_number: number
+          session_completion_id: string
+          time_seconds: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          rep_number: number
+          session_completion_id: string
+          time_seconds: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          rep_number?: number
+          session_completion_id?: string
+          time_seconds?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_splits_session_completion_id_fkey"
+            columns: ["session_completion_id"]
+            isOneToOne: false
+            referencedRelation: "session_completions"
             referencedColumns: ["id"]
           },
         ]
@@ -930,6 +1031,7 @@ export type Database = {
     }
     Functions: {
       am_participant: { Args: { conv_id: string }; Returns: boolean }
+      conversation_in_my_club: { Args: { conv_id: string }; Returns: boolean }
       is_group_member: { Args: { gid: string }; Returns: boolean }
       join_club_with_invite: {
         Args: { display_name: string; invite_code: string }

@@ -125,18 +125,60 @@ export async function fetchLastActivity(profileId: string): Promise<LastActivity
 export async function fetchAveragePace(profileId: string, from: string, to: string): Promise<number | null> {
   const { data } = await supabase
     .from('session_completions')
-    .select('status, free_session_distance_km, free_session_duration_min, session:sessions(distance_km, duration_min)')
+    .select('status, free_session_distance_km, free_session_duration_min, actual_distance_km, actual_duration_min, session:sessions(distance_km, duration_min)')
     .eq('profile_id', profileId)
     .in('status', ['done', 'free_session'])
     .gte('completed_at', from)
     .lt('completed_at', to)
   let km = 0, min = 0
-  for (const c of (data ?? []) as unknown as { status: string; free_session_distance_km: number | null; free_session_duration_min: number | null; session: { distance_km: number | null; duration_min: number | null } | null }[]) {
-    const d = c.status === 'free_session' ? c.free_session_distance_km : c.session?.distance_km
-    const m = c.status === 'free_session' ? c.free_session_duration_min : c.session?.duration_min
+  for (const c of (data ?? []) as unknown as {
+    status: string; free_session_distance_km: number | null; free_session_duration_min: number | null
+    actual_distance_km: number | null; actual_duration_min: number | null
+    session: { distance_km: number | null; duration_min: number | null } | null
+  }[]) {
+    const d = c.status === 'free_session' ? c.free_session_distance_km : (c.actual_distance_km ?? c.session?.distance_km)
+    const m = c.status === 'free_session' ? c.free_session_duration_min : (c.actual_duration_min ?? c.session?.duration_min)
     if (d && m) { km += d; min += m }
   }
   return km > 0 ? min / km : null
+}
+
+/** Average pace (min/km) per week, over the last `weeks` weeks. */
+export async function fetchWeeklyAveragePace(profileId: string, weeks = 8): Promise<{ label: string; value: number }[]> {
+  const now = new Date()
+  const day = (now.getDay() + 6) % 7
+  const thisWeekStart = new Date(now); thisWeekStart.setHours(0, 0, 0, 0); thisWeekStart.setDate(thisWeekStart.getDate() - day)
+  const earliest = new Date(thisWeekStart.getTime() - weeks * 7 * 86400000)
+
+  const { data } = await supabase
+    .from('session_completions')
+    .select('completed_at, status, free_session_distance_km, free_session_duration_min, actual_distance_km, actual_duration_min, session:sessions(distance_km, duration_min)')
+    .eq('profile_id', profileId)
+    .in('status', ['done', 'free_session'])
+    .gte('completed_at', earliest.toISOString())
+
+  const rows = (data ?? []) as unknown as {
+    completed_at: string; status: string
+    free_session_distance_km: number | null; free_session_duration_min: number | null
+    actual_distance_km: number | null; actual_duration_min: number | null
+    session: { distance_km: number | null; duration_min: number | null } | null
+  }[]
+
+  const results: { label: string; value: number }[] = []
+  for (let i = weeks - 1; i >= 0; i--) {
+    const start = new Date(thisWeekStart.getTime() - i * 7 * 86400000)
+    const end = new Date(start.getTime() + 7 * 86400000)
+    let km = 0, min = 0
+    for (const c of rows) {
+      const t = new Date(c.completed_at).getTime()
+      if (t < start.getTime() || t >= end.getTime()) continue
+      const d = c.status === 'free_session' ? c.free_session_distance_km : (c.actual_distance_km ?? c.session?.distance_km)
+      const m = c.status === 'free_session' ? c.free_session_duration_min : (c.actual_duration_min ?? c.session?.duration_min)
+      if (d && m) { km += d; min += m }
+    }
+    results.push({ label: start.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }), value: km > 0 ? +(min / km).toFixed(2) : 0 })
+  }
+  return results
 }
 
 /** All-time cumulative km for the athlete (done sessions + free sessions). */

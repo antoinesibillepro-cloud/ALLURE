@@ -3,14 +3,184 @@ import { Card, SectionLabel, BtnPrimary, BtnSecondary } from '../../components/u
 import { useApp } from '../../context/AppContext'
 import { useQuery } from '../../lib/useQuery'
 import { fetchGroups, type GroupWithMembers } from '../../lib/queries/groups'
-import { createSession } from '../../lib/queries/sessions'
+import {
+  createSession, fetchCoachSessions, updateSession, deleteSession, fetchSessionRealizations,
+  type AthleteRealization,
+} from '../../lib/queries/sessions'
 
-const SESSION_TYPES = ['Fractionné VMA', 'Seuil lactique', 'Endurance fondamentale', 'Sortie longue', 'Côtes', 'Récupération active']
+const SESSION_TYPES = [
+  'Footing récup', 'Endurance fondamentale', 'VMA courte', 'VMA moyenne', 'VMA longue',
+  'Fractionné', 'Seuil', 'Côtes courtes', 'Côtes longues', 'Sortie longue', 'Compétition',
+]
+
+function paceFromDistanceDuration(distanceKm: number | null, durationMin: number | null): string | null {
+  if (!distanceKm || !durationMin || distanceKm <= 0) return null
+  const secPerKm = (durationMin * 60) / distanceKm
+  const m = Math.floor(secPerKm / 60)
+  const s = Math.round(secPerKm % 60)
+  return `${m}'${s.toString().padStart(2, '0')}"/km`
+}
+
+type CoachSessionRow = {
+  id: string; title: string; type: string; description: string | null
+  duration_min: number | null; distance_km: number | null; vma_percent: number | null
+  scheduled_at: string; status: string
+  session_assignments: { group_id: string; groups: { name: string } | null }[]
+}
+
+function SessionLibraryRow({ session, onChanged }: { session: CoachSessionRow; onChanged: () => void }) {
+  const [expanded, setExpanded] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [title, setTitle] = useState(session.title)
+  const [description, setDescription] = useState(session.description ?? '')
+  const [duration, setDuration] = useState(session.duration_min ?? 0)
+  const [distance, setDistance] = useState(session.distance_km ?? 0)
+  const [vmaPercent, setVmaPercent] = useState(session.vma_percent ?? 0)
+  const [scheduledDate, setScheduledDate] = useState(session.scheduled_at.slice(0, 10))
+  const [saving, setSaving] = useState(false)
+
+  const groupIds = session.session_assignments.map((a) => a.group_id)
+  const groupNames = session.session_assignments.map((a) => a.groups?.name).filter(Boolean).join(', ')
+
+  const { data: realizations } = useQuery<AthleteRealization[]>(
+    () => (expanded ? fetchSessionRealizations(session.id, groupIds) : Promise.resolve([])),
+    [expanded, session.id],
+  )
+
+  async function handleSave() {
+    setSaving(true)
+    try {
+      await updateSession(session.id, {
+        title, description, duration_min: duration, distance_km: distance, vma_percent: vmaPercent,
+        scheduled_at: new Date(scheduledDate).toISOString(),
+      })
+      setEditing(false)
+      onChanged()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!confirm('Supprimer cette séance ?')) return
+    await deleteSession(session.id)
+    onChanged()
+  }
+
+  const daysDone = (realizations ?? []).filter((r) => r.status === 'done').length
+
+  return (
+    <Card className="!p-0 overflow-hidden">
+      <button onClick={() => setExpanded((v) => !v)} className="w-full flex items-center gap-3 p-4 text-left">
+        <div className="w-11 h-11 rounded-2xl flex flex-col items-center justify-center shrink-0" style={{ background: 'rgba(242,196,0,0.12)' }}>
+          <span className="text-xs font-black text-[#F2C400]">{new Date(session.scheduled_at).toLocaleDateString('fr-FR', { day: 'numeric' })}</span>
+          <span className="text-[8px] font-bold uppercase text-[#F2C400]">{new Date(session.scheduled_at).toLocaleDateString('fr-FR', { month: 'short' })}</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>{session.title}</p>
+          <p className="text-xs truncate" style={{ color: 'var(--text-2)' }}>{groupNames || 'Aucun groupe'} · {session.status === 'published' ? 'Publiée' : 'Brouillon'}</p>
+        </div>
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>
+          <path d="M4.5 3L7.5 6L4.5 9" stroke="var(--text-2)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-4 space-y-4" style={{ borderTop: '1px solid var(--border)' }}>
+          {!editing ? (
+            <div className="pt-4">
+              {session.description && <p className="text-sm mb-3" style={{ color: 'var(--text-2)' }}>{session.description}</p>}
+              <div className="flex gap-4 mb-3">
+                <span className="text-xs" style={{ color: 'var(--text-2)' }}>{session.duration_min ?? '—'} min</span>
+                <span className="text-xs" style={{ color: 'var(--text-2)' }}>{session.distance_km ?? '—'} km</span>
+                <span className="text-xs" style={{ color: 'var(--text-2)' }}>{session.vma_percent ?? '—'}% VMA</span>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setEditing(true)} className="text-xs font-bold px-3 py-1.5 rounded-lg" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
+                  Modifier / décaler
+                </button>
+                <button onClick={handleDelete} className="text-xs font-semibold px-3 py-1.5 rounded-lg" style={{ color: '#E4574A' }}>
+                  Supprimer
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="pt-4 space-y-2">
+              <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Titre"
+                className="w-full rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+              <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="Contenu"
+                className="w-full rounded-[10px] px-3 py-2 text-sm outline-none resize-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+              <div className="grid grid-cols-2 gap-2">
+                <input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)}
+                  className="rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+                <div />
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <input type="number" value={duration} onChange={(e) => setDuration(Number(e.target.value))} placeholder="Durée (min)"
+                  className="rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+                <input type="number" value={distance} onChange={(e) => setDistance(Number(e.target.value))} placeholder="Distance (km)"
+                  className="rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+                <input type="number" value={vmaPercent} onChange={(e) => setVmaPercent(Number(e.target.value))} placeholder="%VMA"
+                  className="rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={handleSave} disabled={saving} className="text-xs font-bold px-4 py-2 rounded-[10px] disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+                  {saving ? '…' : 'Enregistrer'}
+                </button>
+                <button onClick={() => setEditing(false)} className="text-xs font-semibold px-4 py-2 rounded-[10px]" style={{ color: 'var(--text-2)' }}>Annuler</button>
+              </div>
+            </div>
+          )}
+
+          <div className="pt-2" style={{ borderTop: '1px solid var(--border)' }}>
+            <div className="flex items-center justify-between mb-2 mt-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>Réalisations</p>
+              <span className="text-xs" style={{ color: 'var(--text-2)' }}>{daysDone}/{realizations?.length ?? 0} fait{daysDone > 1 ? 'es' : 'e'}</span>
+            </div>
+            {!realizations?.length ? (
+              <p className="text-xs py-2" style={{ color: 'var(--text-2)' }}>Aucun athlète dans les groupes assignés.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {realizations.map((r) => (
+                  <div key={r.profile_id} className="rounded-xl px-3 py-2" style={{ background: 'var(--surface2)' }}>
+                    <div className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: r.status === 'done' ? '#5EBA65' : 'var(--border)' }} />
+                      <span className="text-sm font-semibold flex-1 truncate" style={{ color: 'var(--text-1)' }}>{r.name}</span>
+                      {r.status === 'done' && (
+                        <span className="text-xs font-bold" style={{ color: '#F2C400' }}>
+                          {paceFromDistanceDuration(r.actual_distance_km, r.actual_duration_min) ?? (r.rpe ? `RPE ${r.rpe}` : '')}
+                        </span>
+                      )}
+                    </div>
+                    {r.status === 'done' && (r.actual_distance_km || r.actual_duration_min) && (
+                      <p className="text-xs mt-1 ml-3.5" style={{ color: 'var(--text-2)' }}>
+                        {r.actual_distance_km ? `${r.actual_distance_km} km` : ''}{r.actual_duration_min ? ` · ${r.actual_duration_min} min` : ''}{r.rpe ? ` · RPE ${r.rpe}` : ''}
+                      </p>
+                    )}
+                    {r.splits.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1.5 ml-3.5">
+                        {r.splits.map((s) => (
+                          <span key={s.rep_number} className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: 'var(--surface3)', color: 'var(--text-1)' }}>
+                            #{s.rep_number} {s.time_seconds}s
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  )
+}
 
 export default function CoachSessions() {
   const { profile } = useApp()
   const [tab, setTab] = useState<'create' | 'library'>('create')
-  const [sessionType, setSessionType] = useState('Fractionné VMA')
+  const [sessionType, setSessionType] = useState('Endurance fondamentale')
   const [duration, setDuration] = useState(55)
   const [distance, setDistance] = useState(12)
   const [vmaPercent, setVmaPercent] = useState(88)
@@ -30,6 +200,11 @@ export default function CoachSessions() {
 
   const activeGroup = groups?.find((g) => g.id === selectedGroupId) ?? groups?.[0] ?? null
   const effectiveGroupId = selectedGroupId || activeGroup?.id || ''
+
+  const { data: coachSessions, refetch: refetchCoachSessions } = useQuery<CoachSessionRow[]>(
+    () => (profile && tab === 'library' ? (fetchCoachSessions(profile.club_id) as unknown as Promise<CoachSessionRow[]>) : Promise.resolve([])),
+    [profile?.club_id, tab],
+  )
 
   async function handlePublish(status: 'draft' | 'published') {
     if (!profile || !effectiveGroupId) return
@@ -248,11 +423,15 @@ export default function CoachSessions() {
       )}
 
       {tab === 'library' && (
-        <Card>
-          <p className="text-sm text-center py-6" style={{ color: 'var(--text-2)' }}>
-            La bibliothèque de séances types arrive dans une prochaine version.
-          </p>
-        </Card>
+        <div className="space-y-3">
+          {!coachSessions?.length ? (
+            <Card>
+              <p className="text-sm text-center py-6" style={{ color: 'var(--text-2)' }}>Aucune séance créée pour l&apos;instant.</p>
+            </Card>
+          ) : (
+            coachSessions.map((s) => <SessionLibraryRow key={s.id} session={s} onChanged={refetchCoachSessions} />)
+          )}
+        </div>
       )}
     </div>
   )
