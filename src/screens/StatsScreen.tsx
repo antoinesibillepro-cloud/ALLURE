@@ -9,6 +9,7 @@ import {
   fetchPersonalRecords, createPersonalRecord, updatePersonalRecord, deletePersonalRecord, type PersonalRecord,
 } from '../lib/queries/profileExtras'
 import { DonutChart, LoadChart, AreaTrendChart, GenericDonutChart } from '../components/charts'
+import AthleteDesktopSidebar from '../components/AthleteDesktopSidebar'
 
 function startOfWeek(d: Date) {
   const day = (d.getDay() + 6) % 7
@@ -161,7 +162,7 @@ export default function StatsScreen() {
     await refetchRecords()
   }
 
-  return (
+  const content = (
     <div className="max-w-xl mx-auto pb-10">
 
       {/* ── Header + tabs ── */}
@@ -440,5 +441,19 @@ export default function StatsScreen() {
       )}
 
     </div>
+  )
+
+  return (
+    <>
+      <div className="lg:hidden">{content}</div>
+      <div className="hidden lg:block" style={{ background: 'var(--bg)' }}>
+        <div className="max-w-[1320px] mx-auto px-4 py-6">
+          <div className="grid gap-5 items-start" style={{ gridTemplateColumns: '240px 1fr' }}>
+            <AthleteDesktopSidebar />
+            <div>{content}</div>
+          </div>
+        </div>
+      </div>
+    </>
   )
 }

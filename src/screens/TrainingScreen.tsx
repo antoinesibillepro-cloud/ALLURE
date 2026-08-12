@@ -11,6 +11,7 @@ import { fetchAthleteRaces, type ClubRace, type RaceAssignment } from '../lib/qu
 import { fetchStrengthMaxes, upsertStrengthMax, deleteStrengthMax, LOAD_PERCENT_TABLE, type StrengthMax } from '../lib/queries/strength'
 import { AreaTrendChart } from '../components/charts'
 import BodyDiagram from '../components/BodyDiagram'
+import AthleteDesktopSidebar from '../components/AthleteDesktopSidebar'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function paceStr(kmh: number): string {
@@ -310,9 +311,8 @@ export default function TrainingScreen() {
   for (let i = 0; i < startOffset; i++) cells.push(null)
   for (let d = 1; d <= daysInMonth; d++) cells.push(d)
 
-  return (
-    <div className="p-4 space-y-4 max-w-2xl mx-auto pb-8">
-
+  const sectionA = (
+    <>
       {/* ── Header ── */}
       <div className="flex items-center justify-between pt-1">
         <h1 className="text-2xl font-black" style={{ color: 'var(--text-1)' }}>Entraînements</h1>
@@ -485,9 +485,11 @@ export default function TrainingScreen() {
           </>
         )}
       </Card>
+    </>
+  )
 
-      {/* ── Objectifs & Compétitions ── */}
-      <div>
+  const objectifsSection = (
+    <div>
         <div className="flex items-center gap-2 mb-2 px-1">
           <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
             <path d="M10 2L12.5 7.5H18L13.5 11L15.5 17L10 13.5L4.5 17L6.5 11L2 7.5H7.5L10 2Z" fill="#F2C400" />
@@ -651,7 +653,10 @@ export default function TrainingScreen() {
           )}
         </Card>
       </div>
+  )
 
+  const sectionB = (
+    <>
       {/* ── Croisé ── */}
       <div>
         <div className="flex items-center gap-2 mb-2 px-1">
@@ -1028,6 +1033,31 @@ export default function TrainingScreen() {
           )}
         </Card>
       </div>
+    </>
+  )
+
+  return (
+    <>
+      <div className="lg:hidden p-4 space-y-4 max-w-2xl mx-auto pb-8">
+        {sectionA}
+        {objectifsSection}
+        {sectionB}
+      </div>
+
+      <div className="hidden lg:block" style={{ background: 'var(--bg)' }}>
+        <div className="max-w-[1320px] mx-auto px-4 py-6">
+          <div className="grid gap-5 items-start" style={{ gridTemplateColumns: '240px 1fr 300px' }}>
+            <AthleteDesktopSidebar />
+            <div className="space-y-4">
+              {sectionA}
+              {sectionB}
+            </div>
+            <div className="space-y-4">
+              {objectifsSection}
+            </div>
+          </div>
+        </div>
+      </div>
 
       {showAddSession && (
         <AddSessionSheet
@@ -1036,6 +1066,6 @@ export default function TrainingScreen() {
           onSave={handleLogFreeSession}
         />
       )}
-    </div>
+    </>
   )
 }

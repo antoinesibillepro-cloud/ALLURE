@@ -8,6 +8,7 @@ import {
   fetchClubLeaderboards, fetchClubRecentRecords, fetchClubCompetitions,
   type LeaderKey, type LeaderRow, type ClubRecord, type ClubCompetitionEvent,
 } from '../lib/queries/club'
+import AthleteDesktopSidebar from '../components/AthleteDesktopSidebar'
 
 type ClubTab = 'feed' | 'classements' | 'competitions'
 
@@ -398,7 +399,7 @@ export default function ClubScreen() {
 
   if (!profile) return null
 
-  return (
+  const content = (
     <div className="screen-enter p-4 md:p-6 max-w-2xl mx-auto">
       <div className="pt-1 mb-4">
         <h1 className="text-2xl font-black" style={{ color: 'var(--text-1)' }}>Club</h1>
@@ -431,5 +432,19 @@ export default function ClubScreen() {
         {tab === 'competitions' && <CompetitionsSection clubId={profile.club_id} profileId={profile.id} />}
       </div>
     </div>
+  )
+
+  return (
+    <>
+      <div className="lg:hidden">{content}</div>
+      <div className="hidden lg:block" style={{ background: 'var(--bg)' }}>
+        <div className="max-w-[1320px] mx-auto px-4 py-6">
+          <div className="grid gap-5 items-start" style={{ gridTemplateColumns: '240px 1fr' }}>
+            <AthleteDesktopSidebar />
+            <div>{content}</div>
+          </div>
+        </div>
+      </div>
+    </>
   )
 }
