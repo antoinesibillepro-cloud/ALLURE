@@ -16,7 +16,6 @@ import CoachMessaging from './screens/coach/CoachMessaging'
 import ClubScreen from './screens/ClubScreen'
 import CommunityScreen from './screens/CommunityScreen'
 import CoachCommunity from './screens/coach/CoachCommunity'
-import CoachDesktopApp from './screens/coach/CoachDesktopApp'
 import CoachAdmin from './screens/coach/CoachAdmin'
 import CoachRaces from './screens/coach/CoachRaces'
 
@@ -236,25 +235,16 @@ export default function App() {
       onOpenAdmin={isCoach ? () => { setCScreen('admin'); setShowProfile(false) } : undefined}
       onOpenRaces={isCoach ? () => { setCScreen('races'); setShowProfile(false) } : undefined} />
     if (isCoach) {
-      return (
-        <>
-          {/* ── Desktop coach: full-width web app ── */}
-          <CoachDesktopApp cScreen={cScreen} setCScreen={(s) => setCScreen(s as CScreen)} />
-          {/* ── Mobile coach: individual screens ── */}
-          <div className="lg:hidden">
-            {(() => { switch (cScreen) {
-              case 'dashboard': return <CoachDashboard />
-              case 'groups':    return <CoachGroups />
-              case 'sessions':  return <CoachSessions />
-              case 'community': return <CoachCommunity />
-              case 'messaging': return <CoachMessaging />
-              case 'clubstats': return <CoachStats />
-              case 'races':     return <CoachRaces />
-              case 'admin':     return <CoachAdmin />
-            }})()}
-          </div>
-        </>
-      )
+      switch (cScreen) {
+        case 'dashboard': return <CoachDashboard />
+        case 'groups':    return <CoachGroups />
+        case 'sessions':  return <CoachSessions />
+        case 'community': return <CoachCommunity />
+        case 'messaging': return <CoachMessaging />
+        case 'clubstats': return <CoachStats />
+        case 'races':     return <CoachRaces />
+        case 'admin':     return <CoachAdmin />
+      }
     }
     switch (aScreen) {
       case 'home': return <HomeScreen />
@@ -283,7 +273,7 @@ export default function App() {
       {/* ════════════════════════════════ DESKTOP ════════════════════════════════ */}
 
       {/* ── Horizontal TopBar ── */}
-      <header className={`${isCoach ? 'hidden' : 'hidden lg:flex'} items-center h-[60px] fixed top-0 left-0 right-0 topbar-glass z-50`}
+      <header className="hidden lg:flex items-center h-[60px] fixed top-0 left-0 right-0 topbar-glass z-50"
         style={{ borderBottom: '1px solid var(--glass-border)' }}>
         <div className="w-full max-w-[1400px] mx-auto px-6 flex items-center gap-6 h-full">
 
@@ -367,7 +357,7 @@ export default function App() {
       </header>
 
       {/* ── Content ── */}
-      <main className={`${isCoach ? 'lg:pt-0' : 'lg:pt-[60px]'} ${isMessaging && !showProfile ? '' : 'min-h-screen pb-28 lg:pb-6'}`}>
+      <main className={`lg:pt-[60px] ${isMessaging && !showProfile ? '' : 'min-h-screen pb-28 lg:pb-6'}`}>
         <div key={contentKey} className="page-enter h-full">
           {renderContent()}
         </div>

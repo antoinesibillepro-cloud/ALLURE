@@ -1,20 +1,29 @@
 import { useState } from 'react'
-import { Card, SectionLabel, Avatar } from '../../components/ui'
+import { Card, SectionLabel } from '../../components/ui'
 import { useApp } from '../../context/AppContext'
 import { useQuery } from '../../lib/useQuery'
 import {
-  fetchClubMembers, updateMemberRole, removeMember, updateClubName,
+  fetchClubMembers, updateMemberRole, updateMemberName, updateMemberVma, updateMemberGroup, removeMember,
+  updateClubName, resetPasswordEmail, createAccountViaAdmin,
   fetchClubInvites, createClubInvite, type ClubMember, type ClubInvite,
 } from '../../lib/queries/clubAdmin'
+import { fetchGroups, type GroupWithMembers } from '../../lib/queries/groups'
 
-function initialsOf(name: string) {
-  return name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
+function randomPassword(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+  let out = ''
+  for (let i = 0; i < 10; i++) out += chars[Math.floor(Math.random() * chars.length)]
+  return out
 }
 
 export default function CoachAdmin() {
   const { profile } = useApp()
   const { data: members, refetch: refetchMembers } = useQuery<ClubMember[]>(
     () => (profile ? fetchClubMembers(profile.club_id) : Promise.resolve([])),
+    [profile?.club_id],
+  )
+  const { data: groups } = useQuery<GroupWithMembers[]>(
+    () => (profile ? fetchGroups(profile.club_id) : Promise.resolve([])),
     [profile?.club_id],
   )
   const { data: invites, refetch: refetchInvites } = useQuery<ClubInvite[]>(
@@ -28,6 +37,22 @@ export default function CoachAdmin() {
   const [creatingInvite, setCreatingInvite] = useState<'athlete' | 'coach' | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [confirmRemove, setConfirmRemove] = useState<ClubMember | null>(null)
+  const [actionMsg, setActionMsg] = useState<{ id: string; text: string } | null>(null)
+
+  const [showCreate, setShowCreate] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newEmail, setNewEmail] = useState('')
+  const [newRole, setNewRole] = useState<'athlete' | 'coach'>('athlete')
+  const [newGroupId, setNewGroupId] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [createdCreds, setCreatedCreds] = useState<{ email: string; password: string } | null>(null)
+
+  const [showImport, setShowImport] = useState(false)
+  const [importText, setImportText] = useState('')
+  const [importGroupId, setImportGroupId] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<string | null>(null)
 
   async function handleSaveClubName() {
     if (!profile || !clubName.trim()) return
@@ -52,11 +77,48 @@ export default function CoachAdmin() {
     }
   }
 
-  async function handleToggleRole(m: ClubMember) {
+  async function handleUpdateRole(m: ClubMember, role: 'athlete' | 'coach') {
     setBusyId(m.id)
     try {
-      await updateMemberRole(m.id, m.role === 'coach' ? 'athlete' : 'coach')
+      await updateMemberRole(m.id, role)
       await refetchMembers()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function handleUpdateGroup(m: ClubMember, groupId: string) {
+    setBusyId(m.id)
+    try {
+      await updateMemberGroup(m.id, groupId || null)
+      await refetchMembers()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function handleUpdateVma(m: ClubMember, value: string) {
+    const vma = value.trim() ? parseFloat(value.replace(',', '.')) : null
+    if (vma === m.vma) return
+    await updateMemberVma(m.id, vma)
+    await refetchMembers()
+  }
+
+  async function handleUpdateName(m: ClubMember, value: string) {
+    if (!value.trim() || value.trim() === m.name) return
+    await updateMemberName(m.id, value.trim())
+    await refetchMembers()
+  }
+
+  async function handleResetPassword(m: ClubMember) {
+    setBusyId(m.id)
+    try {
+      await resetPasswordEmail(m.email)
+      setActionMsg({ id: m.id, text: 'Email envoyé' })
+      setTimeout(() => setActionMsg(null), 3000)
+    } catch {
+      setActionMsg({ id: m.id, text: 'Échec de l\'envoi' })
+      setTimeout(() => setActionMsg(null), 3000)
     } finally {
       setBusyId(null)
     }
@@ -73,11 +135,51 @@ export default function CoachAdmin() {
     }
   }
 
+  async function handleCreateAccount() {
+    if (!newName.trim() || !newEmail.trim()) return
+    setCreating(true)
+    setCreateError(null)
+    try {
+      const password = randomPassword()
+      await createAccountViaAdmin({ email: newEmail.trim().toLowerCase(), password, name: newName.trim(), role: newRole, groupId: newGroupId || null })
+      setCreatedCreds({ email: newEmail.trim().toLowerCase(), password })
+      setNewName(''); setNewEmail(''); setNewGroupId('')
+      await refetchMembers()
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : 'Erreur')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function handleImport() {
+    if (!importText.trim()) return
+    setImporting(true)
+    setImportResult(null)
+    const lines = importText.split('\n').map((l) => l.trim()).filter(Boolean)
+    let ok = 0, fail = 0
+    for (const line of lines) {
+      const parts = line.split(/[;,\t]| - /).map((p) => p.trim()).filter(Boolean)
+      if (parts.length < 2) { fail++; continue }
+      const [name, email] = parts
+      try {
+        await createAccountViaAdmin({ email: email.toLowerCase(), password: randomPassword(), name, role: 'athlete', groupId: importGroupId || null })
+        ok++
+      } catch {
+        fail++
+      }
+    }
+    setImporting(false)
+    setImportResult(`${ok} compte${ok > 1 ? 's' : ''} créé${ok > 1 ? 's' : ''}${fail ? `, ${fail} échec${fail > 1 ? 's' : ''}` : ''}`)
+    setImportText('')
+    await refetchMembers()
+  }
+
   const athletes = (members ?? []).filter((m) => m.role === 'athlete')
   const coaches = (members ?? []).filter((m) => m.role === 'coach')
 
   return (
-    <div className="p-4 lg:p-6 space-y-4 max-w-3xl mx-auto pb-10">
+    <div className="p-4 lg:p-6 space-y-4 max-w-5xl mx-auto pb-10">
       <div className="pt-1">
         <h1 className="text-2xl font-black" style={{ color: 'var(--text-1)' }}>Administration du club</h1>
         <p className="text-sm mt-0.5" style={{ color: 'var(--text-2)' }}>
@@ -90,7 +192,7 @@ export default function CoachAdmin() {
         <SectionLabel>Nom du club</SectionLabel>
         <div className="flex items-center gap-2 mt-2">
           <input value={clubName} onChange={(e) => setClubName(e.target.value)}
-            placeholder={profile?.name ? 'Nom du club' : ''}
+            placeholder="Nom du club"
             className="flex-1 rounded-xl px-3 py-2.5 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
           <button onClick={handleSaveClubName} disabled={savingName || !clubName.trim()}
             className="text-xs font-bold px-4 py-2.5 rounded-xl disabled:opacity-50"
@@ -116,7 +218,7 @@ export default function CoachAdmin() {
           </div>
         </div>
         {!invites?.length ? (
-          <p className="text-sm py-2" style={{ color: 'var(--text-2)' }}>Aucun code généré. Crée un code pour inviter un nouvel athlète ou coach.</p>
+          <p className="text-sm py-2" style={{ color: 'var(--text-2)' }}>Aucun code généré.</p>
         ) : (
           <div className="space-y-2">
             {invites.map((inv) => {
@@ -138,54 +240,149 @@ export default function CoachAdmin() {
         )}
       </Card>
 
-      {/* ── Coaches ── */}
-      <Card>
-        <SectionLabel>Coaches</SectionLabel>
-        <div className="mt-2 space-y-1">
-          {coaches.map((m) => (
-            <div key={m.id} className="flex items-center gap-3 py-2.5">
-              <Avatar initials={initialsOf(m.name)} size={36} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-1)' }}>{m.name}</p>
-                <p className="text-xs truncate" style={{ color: 'var(--text-2)' }}>{m.email}</p>
-              </div>
-              {m.id !== profile?.id && (
-                <button onClick={() => handleToggleRole(m)} disabled={busyId === m.id}
-                  className="text-xs font-semibold px-3 py-1.5 rounded-xl disabled:opacity-50" style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
-                  {busyId === m.id ? '…' : 'Passer athlète'}
-                </button>
-              )}
-            </div>
-          ))}
+      {/* ── Comptes ── */}
+      <Card className="!p-0 overflow-hidden">
+        <div className="flex items-center justify-between p-4 pb-3 flex-wrap gap-2">
+          <SectionLabel>Comptes ({members?.length ?? 0})</SectionLabel>
+          <div className="flex gap-2">
+            <button onClick={() => { setShowCreate((v) => !v); setShowImport(false) }}
+              className="text-xs font-bold px-3 py-2 rounded-xl" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+              + Créer un compte
+            </button>
+            <button onClick={() => { setShowImport((v) => !v); setShowCreate(false) }}
+              className="text-xs font-bold px-3 py-2 rounded-xl" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
+              Importer une liste
+            </button>
+          </div>
         </div>
-      </Card>
 
-      {/* ── Athletes ── */}
-      <Card>
-        <SectionLabel>Athlètes</SectionLabel>
-        {!athletes.length ? (
-          <p className="text-sm py-3" style={{ color: 'var(--text-2)' }}>Aucun athlète pour l&apos;instant.</p>
-        ) : (
-          <div className="mt-2 space-y-1">
-            {athletes.map((m) => (
-              <div key={m.id} className="flex items-center gap-3 py-2.5">
-                <Avatar initials={initialsOf(m.name)} size={36} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-1)' }}>{m.name}</p>
-                  <p className="text-xs truncate" style={{ color: 'var(--text-2)' }}>{m.email}{m.vma ? ` · VMA ${m.vma} km/h` : ''}</p>
-                </div>
-                <button onClick={() => handleToggleRole(m)} disabled={busyId === m.id}
-                  className="text-xs font-semibold px-3 py-1.5 rounded-xl disabled:opacity-50" style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
-                  {busyId === m.id ? '…' : 'Promouvoir coach'}
-                </button>
-                <button onClick={() => setConfirmRemove(m)}
-                  className="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style={{ color: '#E4574A' }}>
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
-                </button>
+        {showCreate && (
+          <div className="mx-4 mb-4 p-4 rounded-2xl space-y-3" style={{ background: 'var(--surface2)', border: '1px solid var(--border)' }}>
+            {createdCreds ? (
+              <div className="text-center py-2">
+                <p className="text-sm font-bold" style={{ color: '#5EBA65' }}>Compte créé !</p>
+                <p className="text-xs mt-2" style={{ color: 'var(--text-2)' }}>Transmets ces identifiants à la personne :</p>
+                <p className="text-sm font-mono mt-1" style={{ color: 'var(--text-1)' }}>{createdCreds.email}</p>
+                <p className="text-sm font-mono" style={{ color: 'var(--text-1)' }}>{createdCreds.password}</p>
+                <button onClick={() => { setCreatedCreds(null); setShowCreate(false) }} className="text-xs font-semibold mt-3" style={{ color: '#F2C400' }}>Fermer</button>
               </div>
-            ))}
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nom complet"
+                    className="rounded-[10px] px-3 py-2.5 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
+                  <input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="Email"
+                    className="rounded-[10px] px-3 py-2.5 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <select value={newRole} onChange={(e) => setNewRole(e.target.value as 'athlete' | 'coach')}
+                    className="rounded-[10px] px-3 py-2.5 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)', border: '1px solid var(--border)' }}>
+                    <option value="athlete">Athlète</option>
+                    <option value="coach">Coach</option>
+                  </select>
+                  <select value={newGroupId} onChange={(e) => setNewGroupId(e.target.value)} disabled={newRole !== 'athlete'}
+                    className="rounded-[10px] px-3 py-2.5 text-sm outline-none disabled:opacity-40" style={{ background: 'var(--card)', color: 'var(--text-1)', border: '1px solid var(--border)' }}>
+                    <option value="">Sans groupe</option>
+                    {groups?.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  </select>
+                </div>
+                {createError && <p className="text-xs" style={{ color: '#E4574A' }}>{createError}</p>}
+                <div className="flex gap-2">
+                  <button onClick={handleCreateAccount} disabled={creating || !newName.trim() || !newEmail.trim()}
+                    className="text-xs font-bold px-4 py-2 rounded-[10px] disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+                    {creating ? '…' : 'Créer'}
+                  </button>
+                  <button onClick={() => setShowCreate(false)} className="text-xs font-semibold px-4 py-2 rounded-[10px]" style={{ color: 'var(--text-2)' }}>Annuler</button>
+                </div>
+              </>
+            )}
           </div>
         )}
+
+        {showImport && (
+          <div className="mx-4 mb-4 p-4 rounded-2xl space-y-3" style={{ background: 'var(--surface2)', border: '1px solid var(--border)' }}>
+            <p className="text-xs" style={{ color: 'var(--text-2)' }}>Une ligne par athlète, format : <span className="font-mono">Nom ; email</span></p>
+            <textarea value={importText} onChange={(e) => setImportText(e.target.value)} rows={5}
+              placeholder={'Jean Dupont ; jean.dupont@mail.com\nMarie Martin ; marie.martin@mail.com'}
+              className="w-full rounded-[10px] px-3 py-2.5 text-sm outline-none resize-none" style={{ background: 'var(--card)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
+            <select value={importGroupId} onChange={(e) => setImportGroupId(e.target.value)}
+              className="w-full rounded-[10px] px-3 py-2.5 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)', border: '1px solid var(--border)' }}>
+              <option value="">Sans groupe</option>
+              {groups?.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+            {importResult && <p className="text-xs" style={{ color: '#5EBA65' }}>{importResult}</p>}
+            <div className="flex gap-2">
+              <button onClick={handleImport} disabled={importing || !importText.trim()}
+                className="text-xs font-bold px-4 py-2 rounded-[10px] disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+                {importing ? 'Import…' : 'Importer'}
+              </button>
+              <button onClick={() => setShowImport(false)} className="text-xs font-semibold px-4 py-2 rounded-[10px]" style={{ color: 'var(--text-2)' }}>Annuler</button>
+            </div>
+          </div>
+        )}
+
+        <div className="overflow-x-auto pb-2">
+          <table className="w-full min-w-[720px]">
+            <thead>
+              <tr className="text-left" style={{ borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
+                {['Nom', 'Email', 'Rôle', 'Groupe', 'VMA', 'Actions'].map((h) => (
+                  <th key={h} className="text-[9px] font-bold uppercase tracking-wider px-4 py-2.5" style={{ color: 'var(--text-2)' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {members?.map((m) => (
+                <tr key={m.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td className="px-4 py-2">
+                    <input defaultValue={m.name} onBlur={(e) => handleUpdateName(m, e.target.value)}
+                      className="text-sm font-semibold bg-transparent outline-none w-full" style={{ color: 'var(--text-1)' }} />
+                  </td>
+                  <td className="px-4 py-2">
+                    <span className="text-xs truncate block max-w-[180px]" style={{ color: 'var(--text-2)' }}>{m.email}</span>
+                  </td>
+                  <td className="px-4 py-2">
+                    <select value={m.role} disabled={busyId === m.id || m.id === profile?.id}
+                      onChange={(e) => handleUpdateRole(m, e.target.value as 'athlete' | 'coach')}
+                      className="text-xs rounded-lg px-2 py-1.5 outline-none disabled:opacity-50" style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)' }}>
+                      <option value="athlete">Athlète</option>
+                      <option value="coach">Coach</option>
+                    </select>
+                  </td>
+                  <td className="px-4 py-2">
+                    <select value={m.group_id ?? ''} disabled={busyId === m.id || m.role !== 'athlete'}
+                      onChange={(e) => handleUpdateGroup(m, e.target.value)}
+                      className="text-xs rounded-lg px-2 py-1.5 outline-none disabled:opacity-40 max-w-[140px]" style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)' }}>
+                      <option value="">—</option>
+                      {groups?.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-4 py-2">
+                    <input type="text" defaultValue={m.vma ?? ''} placeholder="—" inputMode="decimal"
+                      onBlur={(e) => handleUpdateVma(m, e.target.value)}
+                      className="text-sm bg-transparent outline-none w-14" style={{ color: 'var(--text-1)' }} />
+                  </td>
+                  <td className="px-4 py-2">
+                    <div className="flex items-center gap-3 whitespace-nowrap">
+                      {actionMsg?.id === m.id ? (
+                        <span className="text-xs font-semibold" style={{ color: '#5EBA65' }}>{actionMsg.text}</span>
+                      ) : (
+                        <button onClick={() => handleResetPassword(m)} disabled={busyId === m.id} className="text-xs font-semibold underline disabled:opacity-50" style={{ color: 'var(--text-2)' }}>
+                          réinit. mot de passe
+                        </button>
+                      )}
+                      {m.id !== profile?.id && (
+                        <button onClick={() => setConfirmRemove(m)} className="text-xs font-semibold" style={{ color: '#E4574A' }}>supprimer</button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[10px] px-4 pb-4 pt-1" style={{ color: 'var(--text-2)' }}>
+          Les modifications sont enregistrées dès que tu quittes un champ.
+        </p>
       </Card>
 
       {confirmRemove && (

@@ -5,9 +5,9 @@ import { useApp } from '../../context/AppContext'
 import { useQuery } from '../../lib/useQuery'
 import {
   fetchConversations, fetchMessages, sendMessage, subscribeToConversation,
-  createAnnouncement, createGroupConversation, type ConversationSummary,
+  createAnnouncement, createGroupConversation, fetchOrCreateDm, type ConversationSummary,
 } from '../../lib/queries/messages'
-import { fetchGroups, type GroupWithMembers } from '../../lib/queries/groups'
+import { fetchGroups, fetchClubAthletes, type GroupWithMembers } from '../../lib/queries/groups'
 
 function initialsOf(name: string) {
   return name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
@@ -34,6 +34,27 @@ export default function CoachMessaging() {
     () => (profile ? fetchGroups(profile.club_id) : Promise.resolve([])),
     [profile?.club_id],
   )
+  const { data: athletes } = useQuery(
+    () => (profile ? fetchClubAthletes(profile.club_id) : Promise.resolve([])),
+    [profile?.club_id],
+  )
+  const [startingDmId, setStartingDmId] = useState<string | null>(null)
+
+  const athletesWithDm = new Set((conversations ?? []).filter((c) => c.kind === 'dm').map((c) => c.dm_other_id))
+  const athletesWithoutDm = (athletes ?? []).filter((a) => !athletesWithDm.has(a.id))
+
+  async function handleStartDm(athleteId: string) {
+    if (!profile) return
+    setStartingDmId(athleteId)
+    try {
+      const convoId = await fetchOrCreateDm(profile.club_id, profile.id, athleteId)
+      await refetchConvs()
+      setActiveConvId(convoId)
+      setMobileView('conv')
+    } finally {
+      setStartingDmId(null)
+    }
+  }
 
   const activeConv = conversations?.find((c) => c.id === activeConvId) ?? null
   const { data: messages, refetch: refetchMessages } = useQuery(
@@ -114,9 +135,9 @@ export default function CoachMessaging() {
         </div>
       </div>
 
-      {!!conversations?.length && (
+      {(!!conversations?.length || !!athletesWithoutDm.length) && (
         <div className="flex gap-3 px-4 pb-3 overflow-x-auto shrink-0">
-          {conversations.map((c) => {
+          {conversations?.map((c) => {
             const isPin = c.kind === 'announcement'
             return (
               <button key={c.id} onClick={() => { setActiveConvId(c.id); setMobileView('conv') }}
@@ -128,12 +149,24 @@ export default function CoachMessaging() {
               </button>
             )
           })}
+          {athletesWithoutDm.map((a) => (
+            <button key={a.id} onClick={() => handleStartDm(a.id)} disabled={startingDmId === a.id}
+              className="flex flex-col items-center gap-1.5 shrink-0 w-14 disabled:opacity-50">
+              <Avatar initials={initialsOf(a.name)} size={48} />
+              <span className="text-[10px] truncate w-full text-center" style={{ color: 'var(--text-2)' }}>{a.name.split(' ')[0]}</span>
+            </button>
+          ))}
         </div>
       )}
 
       <div className="flex-1 overflow-y-auto">
-        {!conversations?.length && (
+        {!conversations?.length && !athletesWithoutDm.length && (
           <p className="text-sm text-center py-8" style={{ color: 'var(--text-2)' }}>Aucune conversation. Utilise « Diffuser » pour publier une annonce ou écrire à un groupe.</p>
+        )}
+        {!!conversations?.length && (
+          <div className="px-4 pt-3 pb-1">
+            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>Conversations</p>
+          </div>
         )}
         {conversations?.map((c) => {
           const active = activeConvId === c.id
@@ -153,6 +186,25 @@ export default function CoachMessaging() {
             </button>
           )
         })}
+
+        {!!athletesWithoutDm.length && (
+          <>
+            <div className="px-4 pt-4 pb-1">
+              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>Athlètes ({athletesWithoutDm.length})</p>
+            </div>
+            {athletesWithoutDm.map((a) => (
+              <button key={a.id} onClick={() => handleStartDm(a.id)} disabled={startingDmId === a.id}
+                className="w-full flex items-center gap-3 px-4 py-3 transition-colors text-left disabled:opacity-50"
+                style={{ borderBottom: '1px solid var(--border)' }}>
+                <Avatar initials={initialsOf(a.name)} size={42} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-1)' }}>{a.name}</p>
+                  <p className="text-xs truncate mt-0.5" style={{ color: 'var(--text-2)' }}>{startingDmId === a.id ? 'Ouverture…' : 'Aucun message'}</p>
+                </div>
+              </button>
+            ))}
+          </>
+        )}
       </div>
     </div>
   )
