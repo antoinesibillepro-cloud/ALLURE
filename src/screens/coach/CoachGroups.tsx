@@ -44,6 +44,7 @@ export default function CoachGroups() {
   const [newGroupLevel, setNewGroupLevel] = useState('')
   const [busy, setBusy] = useState(false)
   const [newSubgroupName, setNewSubgroupName] = useState('')
+  const [renameError, setRenameError] = useState<string | null>(null)
 
   const topGroups = (groups ?? []).filter((g) => !g.parent_group_id)
   const group = topGroups.find((g) => g.id === activeGroupId) ?? topGroups[0] ?? null
@@ -132,8 +133,13 @@ export default function CoachGroups() {
 
   async function handleRenameGroup(groupId: string, name: string) {
     if (!name.trim()) return
-    await updateGroupName(groupId, name.trim())
-    await refetch()
+    setRenameError(null)
+    try {
+      await updateGroupName(groupId, name.trim())
+      await refetch()
+    } catch (err) {
+      setRenameError(err instanceof Error ? err.message : 'Échec du renommage')
+    }
   }
 
   if (loading) {
@@ -183,9 +189,10 @@ export default function CoachGroups() {
             <>
               <Card>
                 <SectionLabel>Vue d&apos;ensemble</SectionLabel>
-                <input defaultValue={group.name} onBlur={(e) => handleRenameGroup(group.id, e.target.value)}
+                <input key={group.id} defaultValue={group.name} onBlur={(e) => handleRenameGroup(group.id, e.target.value)}
                   className="text-xl font-black bg-transparent outline-none w-full mt-1" style={{ color: 'var(--text-1)' }} />
                 <p className="text-sm mt-0.5" style={{ color: 'var(--text-2)' }}>{clusterMembers.size} athlètes{group.level ? ` · ${group.level}` : ''}</p>
+                {renameError && <p className="text-xs mt-1.5" style={{ color: '#E4574A' }}>{renameError}</p>}
               </Card>
 
               {/* ── Subgroups ── */}
@@ -198,7 +205,7 @@ export default function CoachGroups() {
                     {subgroups.map((sg) => (
                       <div key={sg.id} className="rounded-xl px-3 py-2.5" style={{ background: 'var(--surface2)' }}>
                         <div className="flex items-center justify-between">
-                          <input defaultValue={sg.name} onBlur={(e) => handleRenameGroup(sg.id, e.target.value)}
+                          <input key={sg.id} defaultValue={sg.name} onBlur={(e) => handleRenameGroup(sg.id, e.target.value)}
                             className="text-sm font-bold bg-transparent outline-none flex-1" style={{ color: 'var(--text-1)' }} />
                           <button onClick={() => handleDeleteSubgroup(sg.id)} className="text-xs font-semibold shrink-0" style={{ color: '#E4574A' }}>supprimer</button>
                         </div>

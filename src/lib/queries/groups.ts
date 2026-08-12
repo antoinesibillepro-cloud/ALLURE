@@ -45,8 +45,9 @@ export async function createGroup(clubId: string, coachId: string, name: string,
 }
 
 export async function updateGroupName(groupId: string, name: string) {
-  const { error } = await supabase.from('groups').update({ name }).eq('id', groupId)
+  const { data, error } = await supabase.from('groups').update({ name }).eq('id', groupId).select('id')
   if (error) throw error
+  if (!data?.length) throw new Error("Modification refusée : tu n'as pas les droits sur ce groupe.")
 }
 
 export async function deleteGroup(groupId: string) {

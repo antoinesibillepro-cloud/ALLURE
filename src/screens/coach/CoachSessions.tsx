@@ -301,10 +301,11 @@ export default function CoachSessions() {
     [profile?.club_id],
   )
 
-  const topGroups = (groups ?? []).filter((g) => !g.parent_group_id)
-  const activeGroup = topGroups.find((g) => g.id === selectedGroupId) ?? topGroups[0] ?? null
+  const allGroups = groups ?? []
+  const topGroups = allGroups.filter((g) => !g.parent_group_id)
+  const activeGroup = allGroups.find((g) => g.id === selectedGroupId) ?? topGroups[0] ?? null
   const effectiveGroupId = selectedGroupId || activeGroup?.id || ''
-  const subgroups = (groups ?? []).filter((g) => g.parent_group_id === effectiveGroupId)
+  const subgroups = allGroups.filter((g) => g.parent_group_id === effectiveGroupId)
 
   if (!sessionType && sessionTypes?.length) setSessionType(sessionTypes[0].name)
 
@@ -494,10 +495,21 @@ export default function CoachSessions() {
                   className="w-full rounded-[12px] px-3 py-2.5 text-sm outline-none appearance-none"
                   style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
                   {!topGroups.length && <option value="">Aucun groupe — crée-en un d'abord</option>}
-                  {topGroups.map((g) => (
-                    <option key={g.id} value={g.id}>{g.name} ({g.members.length})</option>
-                  ))}
+                  {topGroups.map((g) => {
+                    const kids = allGroups.filter((sg) => sg.parent_group_id === g.id)
+                    return (
+                      <optgroup key={g.id} label={g.name}>
+                        <option value={g.id}>{g.name} — tout le groupe ({g.members.length})</option>
+                        {kids.map((sg) => (
+                          <option key={sg.id} value={sg.id}>↳ {sg.name} ({sg.members.length})</option>
+                        ))}
+                      </optgroup>
+                    )
+                  })}
                 </select>
+                {activeGroup?.parent_group_id && (
+                  <p className="text-xs mt-1.5" style={{ color: 'var(--text-2)' }}>Séance envoyée uniquement au sous-groupe {activeGroup.name}.</p>
+                )}
               </div>
               <div>
                 <label className="text-[10px] uppercase tracking-widest mb-2 block" style={{ color: 'var(--text-2)' }}>Créneau</label>
