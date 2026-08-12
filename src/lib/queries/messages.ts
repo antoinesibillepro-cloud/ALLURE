@@ -56,17 +56,17 @@ export async function fetchOrCreateDm(clubId: string, meId: string, otherId: str
       if (pids.length === 2 && pids.includes(otherId)) return c.id
     }
   }
-  const { data: convo, error } = await supabase
-    .from('conversations')
-    .insert({ club_id: clubId, kind: 'dm', created_by: meId })
-    .select()
-    .single()
+  // Insert without .select(): the row isn't visible under "read own conversations"
+  // until its participant rows exist, and PostgREST's return=representation would
+  // otherwise fail RLS on the SELECT-back even though the INSERT itself is valid.
+  const id = crypto.randomUUID()
+  const { error } = await supabase.from('conversations').insert({ id, club_id: clubId, kind: 'dm', created_by: meId })
   if (error) throw error
   const { error: partErr } = await supabase
     .from('conversation_participants')
-    .insert([{ conversation_id: convo.id, profile_id: meId }, { conversation_id: convo.id, profile_id: otherId }])
+    .insert([{ conversation_id: id, profile_id: meId }, { conversation_id: id, profile_id: otherId }])
   if (partErr) throw partErr
-  return convo.id
+  return id
 }
 
 export async function fetchMessages(conversationId: string) {
@@ -95,17 +95,19 @@ export async function createAnnouncement(clubId: string, coachId: string, title:
 }
 
 export async function createGroupConversation(clubId: string, coachId: string, groupId: string, title: string, memberIds: string[]) {
-  const { data: convo, error } = await supabase
+  // See fetchOrCreateDm for why this skips .select(): a 'group' conversation
+  // isn't readable until its participants exist, so returning the inserted
+  // row here would fail RLS even though the insert itself is valid.
+  const id = crypto.randomUUID()
+  const { error } = await supabase
     .from('conversations')
-    .insert({ club_id: clubId, kind: 'group', group_id: groupId, title, created_by: coachId })
-    .select()
-    .single()
+    .insert({ id, club_id: clubId, kind: 'group', group_id: groupId, title, created_by: coachId })
   if (error) throw error
 
-  const rows = [...new Set([coachId, ...memberIds])].map((profile_id) => ({ conversation_id: convo.id, profile_id }))
+  const rows = [...new Set([coachId, ...memberIds])].map((profile_id) => ({ conversation_id: id, profile_id }))
   const { error: partErr } = await supabase.from('conversation_participants').insert(rows)
   if (partErr) throw partErr
-  return convo
+  return { id }
 }
 
 export function subscribeToConversation(conversationId: string, onInsert: () => void) {
