@@ -530,6 +530,7 @@ export type Database = {
           id: string
           level: string | null
           name: string
+          parent_group_id: string | null
         }
         Insert: {
           club_id: string
@@ -538,6 +539,7 @@ export type Database = {
           id?: string
           level?: string | null
           name: string
+          parent_group_id?: string | null
         }
         Update: {
           club_id?: string
@@ -546,6 +548,7 @@ export type Database = {
           id?: string
           level?: string | null
           name?: string
+          parent_group_id?: string | null
         }
         Relationships: [
           {
@@ -560,6 +563,13 @@ export type Database = {
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "groups_parent_group_id_fkey"
+            columns: ["parent_group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
             referencedColumns: ["id"]
           },
         ]
@@ -848,6 +858,115 @@ export type Database = {
           },
         ]
       }
+      session_target_splits: {
+        Row: {
+          created_at: string
+          id: string
+          rep_number: number
+          target_time_seconds: number | null
+          work_block_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          rep_number: number
+          target_time_seconds?: number | null
+          work_block_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          rep_number?: number
+          target_time_seconds?: number | null
+          work_block_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_target_splits_work_block_id_fkey"
+            columns: ["work_block_id"]
+            isOneToOne: false
+            referencedRelation: "session_work_blocks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      session_types: {
+        Row: {
+          club_id: string
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          club_id: string
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          club_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_types_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      session_work_blocks: {
+        Row: {
+          content: string | null
+          created_at: string
+          group_id: string | null
+          id: string
+          is_rest: boolean
+          label: string | null
+          session_id: string
+          target_pace_sec_per_km: number | null
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string
+          group_id?: string | null
+          id?: string
+          is_rest?: boolean
+          label?: string | null
+          session_id: string
+          target_pace_sec_per_km?: number | null
+        }
+        Update: {
+          content?: string | null
+          created_at?: string
+          group_id?: string | null
+          id?: string
+          is_rest?: boolean
+          label?: string | null
+          session_id?: string
+          target_pace_sec_per_km?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_work_blocks_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_work_blocks_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sessions: {
         Row: {
           club_id: string
@@ -861,6 +980,7 @@ export type Database = {
           main_set: string | null
           scheduled_at: string
           status: Database["public"]["Enums"]["session_status"]
+          time_slot: string | null
           title: string
           type: string
           vma_percent: number | null
@@ -878,6 +998,7 @@ export type Database = {
           main_set?: string | null
           scheduled_at: string
           status?: Database["public"]["Enums"]["session_status"]
+          time_slot?: string | null
           title: string
           type: string
           vma_percent?: number | null
@@ -895,6 +1016,7 @@ export type Database = {
           main_set?: string | null
           scheduled_at?: string
           status?: Database["public"]["Enums"]["session_status"]
+          time_slot?: string | null
           title?: string
           type?: string
           vma_percent?: number | null

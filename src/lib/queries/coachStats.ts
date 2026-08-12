@@ -1,4 +1,5 @@
 import { supabase } from '../supabase'
+import { fetchLatestWellnessScores } from './stats'
 
 function isoDate(d: Date) { return d.toISOString().slice(0, 10) }
 function startOfWeek(d: Date) {
@@ -116,6 +117,67 @@ export async function fetchClubKpis(clubId: string): Promise<ClubKpis> {
     sessionsPublished: sessionsPublished ?? 0,
     completionRate: totalPlanned > 0 ? Math.round((totalDone / totalPlanned) * 100) : 0,
   }
+}
+
+export interface VigilanceAthlete {
+  id: string
+  name: string
+  groupName: string
+  completionRate: number | null // last 2 weeks, null if no sessions assigned
+  formePct: number | null
+  status: 'alerte' | 'attention' | 'ok'
+}
+
+/** Athletes flagged for low recent completion and/or low wellness — for the coach dashboard. */
+export async function fetchAthleteVigilance(clubId: string): Promise<VigilanceAthlete[]> {
+  const { data: athletes } = await supabase
+    .from('profiles')
+    .select('id, name, group_members(groups(name))')
+    .eq('club_id', clubId)
+    .eq('role', 'athlete')
+  if (!athletes?.length) return []
+
+  const twoWeeksAgo = isoDate(new Date(Date.now() - 14 * 24 * 3600 * 1000))
+  const now = isoDate(new Date(Date.now() + 24 * 3600 * 1000))
+
+  const wellness = await fetchLatestWellnessScores(clubId)
+
+  const results: VigilanceAthlete[] = []
+  for (const a of athletes as unknown as { id: string; name: string; group_members: { groups: { name: string } | null }[] }[]) {
+    const { data: memberships } = await supabase.from('group_members').select('group_id').eq('profile_id', a.id)
+    const groupIds = (memberships ?? []).map((m) => m.group_id)
+
+    let completionRate: number | null = null
+    if (groupIds.length > 0) {
+      const { data: assignments } = await supabase.from('session_assignments').select('session_id').in('group_id', groupIds)
+      const sessionIds = [...new Set((assignments ?? []).map((r) => r.session_id))]
+      if (sessionIds.length > 0) {
+        const { data: sessions } = await supabase
+          .from('sessions').select('id').in('id', sessionIds).eq('status', 'published')
+          .gte('scheduled_at', twoWeeksAgo).lt('scheduled_at', now)
+        const recentIds = (sessions ?? []).map((s) => s.id)
+        if (recentIds.length > 0) {
+          const { data: completions } = await supabase
+            .from('session_completions').select('id').eq('profile_id', a.id).in('session_id', recentIds).eq('status', 'done')
+          completionRate = Math.round(((completions?.length ?? 0) / recentIds.length) * 100)
+        }
+      }
+    }
+
+    const formePct = wellness[a.id]?.pct ?? null
+    const groupName = a.group_members?.[0]?.groups?.name ?? '—'
+
+    let status: 'alerte' | 'attention' | 'ok' = 'ok'
+    const lowCompletion = completionRate !== null && completionRate < 50
+    const lowForme = formePct !== null && formePct < 40
+    if (lowCompletion && lowForme) status = 'alerte'
+    else if (lowCompletion || lowForme) status = 'attention'
+
+    results.push({ id: a.id, name: a.name, groupName, completionRate, formePct, status })
+  }
+
+  const order = { alerte: 0, attention: 1, ok: 2 }
+  return results.sort((x, y) => order[x.status] - order[y.status])
 }
 
 export interface TopAthlete { name: string; groupName: string; km: number }

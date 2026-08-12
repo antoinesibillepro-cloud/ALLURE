@@ -1,7 +1,12 @@
+import { useEffect } from 'react'
 import { Card, SectionLabel, Avatar } from '../../components/ui'
 import { useApp } from '../../context/AppContext'
 import { useQuery } from '../../lib/useQuery'
-import { fetchGroupCompletionThisWeek, fetchClubActivityFeed, fetchClubKpis } from '../../lib/queries/coachStats'
+import { fetchGroupCompletionThisWeek, fetchClubActivityFeed, fetchClubKpis, fetchAthleteVigilance, type VigilanceAthlete } from '../../lib/queries/coachStats'
+import { ensureWeeklyClubChallenge } from '../../lib/queries/community'
+
+const STATUS_LABEL: Record<VigilanceAthlete['status'], string> = { alerte: 'Alerte', attention: 'À surveiller', ok: 'En forme' }
+const STATUS_COLOR: Record<VigilanceAthlete['status'], string> = { alerte: '#E4574A', attention: '#F2C400', ok: '#5EBA65' }
 
 export default function CoachDashboard() {
   const { profile } = useApp()
@@ -10,6 +15,12 @@ export default function CoachDashboard() {
   const { data: kpis } = useQuery(() => (clubId ? fetchClubKpis(clubId) : Promise.resolve(null)), [clubId])
   const { data: groups } = useQuery(() => (clubId ? fetchGroupCompletionThisWeek(clubId) : Promise.resolve([])), [clubId])
   const { data: feed } = useQuery(() => (clubId ? fetchClubActivityFeed(clubId) : Promise.resolve([])), [clubId])
+  const { data: vigilance } = useQuery(() => (clubId ? fetchAthleteVigilance(clubId) : Promise.resolve([])), [clubId])
+  const toWatch = (vigilance ?? []).filter((v) => v.status !== 'ok')
+
+  useEffect(() => {
+    if (clubId && profile) ensureWeeklyClubChallenge(clubId, profile.id).catch(() => {})
+  }, [clubId, profile?.id])
 
   const today = new Date()
 
@@ -74,6 +85,33 @@ export default function CoachDashboard() {
           })}
         </div>
       )}
+
+      {/* Vigilance */}
+      <Card>
+        <SectionLabel>À surveiller</SectionLabel>
+        {!toWatch.length ? (
+          <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Tout le monde est en forme, aucune alerte.</p>
+        ) : (
+          <div className="space-y-0 mt-1">
+            {toWatch.map((v) => (
+              <div key={v.id} className="flex items-center gap-3 py-2.5" style={{ borderBottom: '1px solid var(--border)' }}>
+                <Avatar initials={v.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()} size={36} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>{v.name}</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>
+                    {v.groupName}
+                    {v.completionRate !== null ? ` · Assiduité ${v.completionRate}%` : ''}
+                    {v.formePct !== null ? ` · Forme ${v.formePct}%` : ' · Pas de bilan'}
+                  </p>
+                </div>
+                <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full shrink-0" style={{ background: `${STATUS_COLOR[v.status]}22`, color: STATUS_COLOR[v.status] }}>
+                  {STATUS_LABEL[v.status]}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
       {/* Activity feed */}
       <Card>

@@ -181,6 +181,58 @@ export async function fetchWeeklyAveragePace(profileId: string, weeks = 8): Prom
   return results
 }
 
+export interface WellnessScore {
+  pct: number
+  date: string
+}
+
+/** Latest daily_checkin per club athlete, converted to a single 0-100% physical form score. */
+export async function fetchLatestWellnessScores(clubId: string): Promise<Record<string, WellnessScore>> {
+  const { data: athletes } = await supabase.from('profiles').select('id').eq('club_id', clubId).eq('role', 'athlete')
+  const ids = (athletes ?? []).map((a) => a.id)
+  if (ids.length === 0) return {}
+
+  const since = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10)
+  const { data } = await supabase
+    .from('daily_checkins')
+    .select('profile_id, date, sleep, fatigue, stress, soreness, motivation')
+    .in('profile_id', ids)
+    .gte('date', since)
+    .order('date', { ascending: false })
+
+  const result: Record<string, WellnessScore> = {}
+  for (const row of data ?? []) {
+    if (result[row.profile_id]) continue // already have the latest (rows ordered desc)
+    const sleepScore = Math.min(1, (row.sleep ?? 0) / 8)
+    const motivationScore = (row.motivation ?? 0) / 10
+    const fatigueScore = 1 - (row.fatigue ?? 0) / 10
+    const stressScore = 1 - (row.stress ?? 0) / 10
+    const sorenessScore = 1 - (row.soreness ?? 0) / 10
+    const pct = Math.round(((sleepScore + motivationScore + fatigueScore + stressScore + sorenessScore) / 5) * 100)
+    result[row.profile_id] = { pct, date: row.date }
+  }
+  return result
+}
+
+/** Count of daily_checkins in the last `days` days whose composite form score is >= `threshold`%. */
+export async function fetchGoodRecoveryDaysCount(profileId: string, days = 30, threshold = 70): Promise<number> {
+  const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
+  const { data } = await supabase
+    .from('daily_checkins')
+    .select('sleep, fatigue, stress, soreness, motivation')
+    .eq('profile_id', profileId)
+    .gte('date', since)
+  return (data ?? []).filter((row) => {
+    const sleepScore = Math.min(1, (row.sleep ?? 0) / 8)
+    const motivationScore = (row.motivation ?? 0) / 10
+    const fatigueScore = 1 - (row.fatigue ?? 0) / 10
+    const stressScore = 1 - (row.stress ?? 0) / 10
+    const sorenessScore = 1 - (row.soreness ?? 0) / 10
+    const pct = ((sleepScore + motivationScore + fatigueScore + stressScore + sorenessScore) / 5) * 100
+    return pct >= threshold
+  }).length
+}
+
 /** All-time cumulative km for the athlete (done sessions + free sessions). */
 export async function fetchAthleteTotalKm(profileId: string): Promise<number> {
   const { data: completions } = await supabase

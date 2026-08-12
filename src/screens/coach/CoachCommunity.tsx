@@ -2,11 +2,53 @@ import { useState } from 'react'
 import { Card, SectionLabel, BtnPrimary, Avatar } from '../../components/ui'
 import { useApp } from '../../context/AppContext'
 import { useQuery } from '../../lib/useQuery'
-import { fetchChallenges, createChallenge, deleteChallenge, fetchChallengeLeaderboard, type Challenge, type ChallengeKind, type LeaderboardEntry } from '../../lib/queries/community'
+import { fetchChallenges, createChallenge, deleteChallenge, fetchChallengeLeaderboard, fetchWeeklyRankings, type Challenge, type ChallengeKind, type LeaderboardEntry, type WeeklyRankings } from '../../lib/queries/community'
 import { fetchGroups, type GroupWithMembers } from '../../lib/queries/groups'
 import { fetchClubActivityFeed, type ActivityItem } from '../../lib/queries/coachStats'
 
 const KIND_LABEL: Record<string, string> = { km: 'km', sessions: 'séances', attendance: 'bilans' }
+const RANKING_LABEL: Record<keyof WeeklyRankings, string> = { km: 'Kilomètres', assiduite: 'Assiduité', recuperation: 'Récupération' }
+const RANKING_UNIT: Record<keyof WeeklyRankings, string> = { km: 'km', assiduite: '%', recuperation: '%' }
+
+function ClubKmBanner({ rankings }: { rankings: WeeklyRankings | null | undefined }) {
+  const total = (rankings?.km ?? []).reduce((s, e) => s + e.value, 0)
+  return (
+    <Card className="text-center !py-6" style={{ background: '#0E0E0D' }}>
+      <p className="text-[10px] uppercase tracking-widest font-bold" style={{ color: '#F2C400' }}>Cumul du club cette semaine</p>
+      <p className="text-4xl font-black mt-1" style={{ color: '#FFFFFF' }}>{total.toFixed(1)}<span className="text-lg font-bold ml-1" style={{ color: '#F2C400' }}>km</span></p>
+    </Card>
+  )
+}
+
+function RankingsTab({ rankings }: { rankings: WeeklyRankings | null | undefined }) {
+  const keys: (keyof WeeklyRankings)[] = ['km', 'assiduite', 'recuperation']
+  return (
+    <div className="space-y-3">
+      {keys.map((key) => {
+        const list = rankings?.[key] ?? []
+        return (
+          <Card key={key}>
+            <SectionLabel>{RANKING_LABEL[key]}</SectionLabel>
+            {!list.length ? (
+              <p className="text-sm text-center py-3" style={{ color: 'var(--text-2)' }}>Pas encore de données cette semaine.</p>
+            ) : (
+              <div className="space-y-1.5 mt-2">
+                {list.slice(0, 8).map((l, i) => (
+                  <div key={l.profileId} className="flex items-center gap-2">
+                    <span className="text-xs w-4 text-center font-bold" style={{ color: i < 3 ? '#F2C400' : 'var(--text-2)' }}>{i + 1}</span>
+                    <Avatar initials={l.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()} size={24} />
+                    <span className="text-xs flex-1" style={{ color: 'var(--text-1)' }}>{l.name}</span>
+                    <span className="text-xs font-bold" style={{ color: 'var(--text-1)' }}>{l.value}{RANKING_UNIT[key]}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        )
+      })}
+    </div>
+  )
+}
 
 function ChallengeRow({ challenge, clubId, onDelete }: { challenge: Challenge; clubId: string; onDelete: () => void }) {
   const { data: leaderboard } = useQuery<LeaderboardEntry[]>(
@@ -42,7 +84,7 @@ function ChallengeRow({ challenge, clubId, onDelete }: { challenge: Challenge; c
 
 export default function CoachCommunity() {
   const { profile } = useApp()
-  const [tab, setTab] = useState<'defis' | 'feed'>('defis')
+  const [tab, setTab] = useState<'defis' | 'classements' | 'feed'>('defis')
   const [showCreate, setShowCreate] = useState(false)
   const [title, setTitle] = useState('')
   const [kind, setKind] = useState<ChallengeKind>('km')
@@ -62,6 +104,10 @@ export default function CoachCommunity() {
   )
   const { data: feed } = useQuery<ActivityItem[]>(
     () => (profile ? fetchClubActivityFeed(profile.club_id, 15) : Promise.resolve([])),
+    [profile?.club_id],
+  )
+  const { data: rankings } = useQuery<WeeklyRankings>(
+    () => (profile ? fetchWeeklyRankings(profile.club_id) : Promise.resolve({ km: [], assiduite: [], recuperation: [] })),
     [profile?.club_id],
   )
 
@@ -145,8 +191,10 @@ export default function CoachCommunity() {
         </Card>
       )}
 
+      <ClubKmBanner rankings={rankings} />
+
       <div className="flex gap-1 p-0.5 rounded-2xl w-fit" style={{ background: 'var(--surface2)' }}>
-        {([{ id: 'defis' as const, label: 'Défis' }, { id: 'feed' as const, label: 'Activité' }]).map((t) => (
+        {([{ id: 'defis' as const, label: 'Défis' }, { id: 'classements' as const, label: 'Classements' }, { id: 'feed' as const, label: 'Fil du club' }]).map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className="px-4 py-1.5 rounded-xl text-xs font-semibold transition-all"
             style={{ background: tab === t.id ? 'var(--card)' : 'transparent', color: tab === t.id ? 'var(--text-1)' : 'var(--text-2)' }}>
@@ -154,6 +202,8 @@ export default function CoachCommunity() {
           </button>
         ))}
       </div>
+
+      {tab === 'classements' && <RankingsTab rankings={rankings} />}
 
       {tab === 'defis' && (
         <div className="space-y-3">

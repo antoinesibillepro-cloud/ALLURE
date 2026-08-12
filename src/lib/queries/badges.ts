@@ -1,5 +1,5 @@
 import { supabase } from '../supabase'
-import { fetchAthleteTotalKm, fetchWeeklyStreak } from './stats'
+import { fetchAthleteTotalKm, fetchWeeklyStreak, fetchGoodRecoveryDaysCount } from './stats'
 import { fetchPersonalRecords } from './profileExtras'
 
 export interface BadgeDef {
@@ -8,7 +8,7 @@ export interface BadgeDef {
   title: string
   description: string
   icon_key: string
-  criteria_kind: 'total_km' | 'streak_weeks' | 'records_count' | 'sessions_month'
+  criteria_kind: 'total_km' | 'streak_weeks' | 'records_count' | 'sessions_month' | 'recovery_days'
   criteria_value: number
 }
 
@@ -31,12 +31,13 @@ export async function fetchEarnedBadges(profileId: string): Promise<EarnedBadge[
 
 /** Checks real aggregates against badge criteria and awards any newly-met badge. */
 export async function computeAndAwardBadges(profileId: string): Promise<void> {
-  const [defs, earned, totalKm, streak, records] = await Promise.all([
+  const [defs, earned, totalKm, streak, records, recoveryDays] = await Promise.all([
     fetchBadgeDefinitions(),
     fetchEarnedBadges(profileId),
     fetchAthleteTotalKm(profileId),
     fetchWeeklyStreak(profileId),
     fetchPersonalRecords(profileId),
+    fetchGoodRecoveryDaysCount(profileId),
   ])
   const earnedIds = new Set(earned.map((e) => e.badge_id))
   const currentStreak = (() => {
@@ -49,6 +50,7 @@ export async function computeAndAwardBadges(profileId: string): Promise<void> {
     if (b.criteria_kind === 'total_km') return totalKm >= b.criteria_value
     if (b.criteria_kind === 'streak_weeks') return currentStreak >= b.criteria_value
     if (b.criteria_kind === 'records_count') return records.length >= b.criteria_value
+    if (b.criteria_kind === 'recovery_days') return recoveryDays >= b.criteria_value
     return false
   })
   if (toAward.length === 0) return

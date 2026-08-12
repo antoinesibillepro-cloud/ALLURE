@@ -2,10 +2,24 @@ import { useState } from 'react'
 import { Card, SectionLabel, BtnPrimary, Avatar } from '../../components/ui'
 import { useApp } from '../../context/AppContext'
 import { useQuery } from '../../lib/useQuery'
-import { fetchGroups, createGroup, addAthleteToGroup, removeAthleteFromGroup, fetchClubAthletes, type GroupWithMembers } from '../../lib/queries/groups'
+import {
+  fetchGroups, createGroup, addAthleteToGroup, removeAthleteFromGroup, moveAthleteToGroup,
+  updateGroupName, deleteGroup, fetchClubAthletes, type GroupWithMembers,
+} from '../../lib/queries/groups'
+import { fetchLatestWellnessScores, type WellnessScore } from '../../lib/queries/stats'
 
 function initialsOf(name: string) {
   return name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
+}
+
+function FormeBadge({ score }: { score: WellnessScore | undefined }) {
+  if (!score) return <span className="text-xs" style={{ color: 'var(--text-2)' }}>Pas de bilan</span>
+  const color = score.pct >= 70 ? '#5EBA65' : score.pct >= 40 ? '#F2C400' : '#E4574A'
+  return (
+    <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: `${color}22`, color }}>
+      Forme {score.pct}%
+    </span>
+  )
 }
 
 export default function CoachGroups() {
@@ -18,6 +32,10 @@ export default function CoachGroups() {
     () => (profile ? fetchClubAthletes(profile.club_id) : Promise.resolve([])),
     [profile?.club_id],
   )
+  const { data: wellness } = useQuery<Record<string, WellnessScore>>(
+    () => (profile ? fetchLatestWellnessScores(profile.club_id) : Promise.resolve({})),
+    [profile?.club_id],
+  )
 
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
@@ -25,9 +43,20 @@ export default function CoachGroups() {
   const [newGroupName, setNewGroupName] = useState('')
   const [newGroupLevel, setNewGroupLevel] = useState('')
   const [busy, setBusy] = useState(false)
+  const [newSubgroupName, setNewSubgroupName] = useState('')
 
-  const group = groups?.find((g) => g.id === activeGroupId) ?? groups?.[0] ?? null
-  const memberIds = new Set(group?.members.map((m) => m.id))
+  const topGroups = (groups ?? []).filter((g) => !g.parent_group_id)
+  const group = topGroups.find((g) => g.id === activeGroupId) ?? topGroups[0] ?? null
+  const subgroups = group ? (groups ?? []).filter((g) => g.parent_group_id === group.id) : []
+
+  // Every athlete across the parent group + its subgroups, with which group they currently sit in.
+  const clusterGroups = group ? [group, ...subgroups] : []
+  const clusterMembers = new Map<string, { name: string; vma: number | null; groupId: string }>()
+  for (const g of clusterGroups) {
+    for (const m of g.members) clusterMembers.set(m.id, { name: m.name, vma: m.vma, groupId: g.id })
+  }
+
+  const memberIds = new Set(clusterMembers.keys())
   const availableToAdd = (clubAthletes ?? []).filter((a) => !memberIds.has(a.id))
 
   async function handleCreateGroup() {
@@ -35,11 +64,35 @@ export default function CoachGroups() {
     setBusy(true)
     try {
       const g = await createGroup(profile.club_id, profile.id, newGroupName.trim(), newGroupLevel.trim() || null)
-      setNewGroupName('')
-      setNewGroupLevel('')
-      setShowCreate(false)
+      setNewGroupName(''); setNewGroupLevel(''); setShowCreate(false)
       await refetch()
       setActiveGroupId(g.id)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleCreateSubgroup() {
+    if (!profile || !group || !newSubgroupName.trim()) return
+    setBusy(true)
+    try {
+      await createGroup(profile.club_id, profile.id, newSubgroupName.trim(), null, group.id)
+      setNewSubgroupName('')
+      await refetch()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDeleteSubgroup(subgroupId: string) {
+    if (!group) return
+    setBusy(true)
+    try {
+      // Move its members back to the parent group before deleting it.
+      const sg = subgroups.find((s) => s.id === subgroupId)
+      for (const m of sg?.members ?? []) await moveAthleteToGroup(subgroupId, group.id, m.id)
+      await deleteGroup(subgroupId)
+      await refetch()
     } finally {
       setBusy(false)
     }
@@ -56,15 +109,31 @@ export default function CoachGroups() {
     }
   }
 
-  async function handleRemoveAthlete(athleteId: string) {
-    if (!group) return
+  async function handleRemoveAthlete(athleteId: string, fromGroupId: string) {
     setBusy(true)
     try {
-      await removeAthleteFromGroup(group.id, athleteId)
+      await removeAthleteFromGroup(fromGroupId, athleteId)
       await refetch()
     } finally {
       setBusy(false)
     }
+  }
+
+  async function handleAssignSubgroup(athleteId: string, currentGroupId: string, targetGroupId: string) {
+    if (currentGroupId === targetGroupId) return
+    setBusy(true)
+    try {
+      await moveAthleteToGroup(currentGroupId, targetGroupId, athleteId)
+      await refetch()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleRenameGroup(groupId: string, name: string) {
+    if (!name.trim()) return
+    await updateGroupName(groupId, name.trim())
+    await refetch()
   }
 
   if (loading) {
@@ -88,13 +157,13 @@ export default function CoachGroups() {
         </Card>
       )}
 
-      {!groups?.length ? (
+      {!topGroups.length ? (
         <Card><p className="text-sm text-center py-6" style={{ color: 'var(--text-2)' }}>Aucun groupe pour l'instant. Crée ton premier groupe pour commencer.</p></Card>
       ) : (
         <>
           {/* Group selector */}
           <div className="flex gap-2 overflow-x-auto pb-0.5">
-            {groups.map((g) => (
+            {topGroups.map((g) => (
               <button key={g.id} onClick={() => setActiveGroupId(g.id)}
                 className="shrink-0 flex flex-col items-start px-4 py-3 rounded-2xl transition-all"
                 style={{
@@ -104,7 +173,7 @@ export default function CoachGroups() {
                 }}>
                 <p className="text-sm font-bold leading-none" style={{ color: group?.id === g.id ? '#0E0E0D' : 'var(--text-1)' }}>{g.name}</p>
                 <p className="text-[10px] mt-1" style={{ color: group?.id === g.id ? 'rgba(0,0,0,0.6)' : 'var(--text-2)' }}>
-                  {g.members.length} athlète{g.members.length > 1 ? 's' : ''}
+                  {clusterMembers.size && group?.id === g.id ? clusterMembers.size : g.members.length} athlète{g.members.length > 1 ? 's' : ''}
                 </p>
               </button>
             ))}
@@ -114,8 +183,38 @@ export default function CoachGroups() {
             <>
               <Card>
                 <SectionLabel>Vue d&apos;ensemble</SectionLabel>
-                <h2 className="text-xl font-black" style={{ color: 'var(--text-1)' }}>{group.name}</h2>
-                <p className="text-sm mt-0.5" style={{ color: 'var(--text-2)' }}>{group.members.length} athlètes{group.level ? ` · ${group.level}` : ''}</p>
+                <input defaultValue={group.name} onBlur={(e) => handleRenameGroup(group.id, e.target.value)}
+                  className="text-xl font-black bg-transparent outline-none w-full mt-1" style={{ color: 'var(--text-1)' }} />
+                <p className="text-sm mt-0.5" style={{ color: 'var(--text-2)' }}>{clusterMembers.size} athlètes{group.level ? ` · ${group.level}` : ''}</p>
+              </Card>
+
+              {/* ── Subgroups ── */}
+              <Card>
+                <div className="flex items-center justify-between mb-3">
+                  <SectionLabel>Sous-groupes</SectionLabel>
+                </div>
+                {subgroups.length > 0 && (
+                  <div className="space-y-2 mb-3">
+                    {subgroups.map((sg) => (
+                      <div key={sg.id} className="rounded-xl px-3 py-2.5" style={{ background: 'var(--surface2)' }}>
+                        <div className="flex items-center justify-between">
+                          <input defaultValue={sg.name} onBlur={(e) => handleRenameGroup(sg.id, e.target.value)}
+                            className="text-sm font-bold bg-transparent outline-none flex-1" style={{ color: 'var(--text-1)' }} />
+                          <button onClick={() => handleDeleteSubgroup(sg.id)} className="text-xs font-semibold shrink-0" style={{ color: '#E4574A' }}>supprimer</button>
+                        </div>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>{sg.members.length} athlète{sg.members.length > 1 ? 's' : ''}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <input value={newSubgroupName} onChange={(e) => setNewSubgroupName(e.target.value)} placeholder="Ex: Groupe 1"
+                    className="flex-1 rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+                  <button onClick={handleCreateSubgroup} disabled={busy || !newSubgroupName.trim()}
+                    className="text-xs font-bold px-3 py-2 rounded-[10px] disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+                    + Créer
+                  </button>
+                </div>
               </Card>
 
               <Card>
@@ -142,19 +241,26 @@ export default function CoachGroups() {
                   </div>
                 )}
 
-                {group.members.length === 0 ? (
+                {clusterMembers.size === 0 ? (
                   <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Aucun athlète dans ce groupe pour l'instant.</p>
                 ) : (
                   <div className="space-y-0">
-                    {group.members.map((m, i) => (
-                      <div key={m.id} className="flex items-center gap-3 py-3"
-                        style={{ borderBottom: i < group.members.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                    {[...clusterMembers.entries()].map(([id, m], i) => (
+                      <div key={id} className="flex items-center gap-3 py-3"
+                        style={{ borderBottom: i < clusterMembers.size - 1 ? '1px solid var(--border)' : 'none' }}>
                         <Avatar initials={initialsOf(m.name)} size={36} />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>{m.name}</p>
-                          <p className="text-xs" style={{ color: 'var(--text-2)' }}>{m.vma ? `VMA ${m.vma}` : 'VMA non renseignée'}</p>
+                          <FormeBadge score={wellness?.[id]} />
                         </div>
-                        <button disabled={busy} onClick={() => handleRemoveAthlete(m.id)} className="text-xs font-semibold" style={{ color: '#E4574A' }}>Retirer</button>
+                        {subgroups.length > 0 && (
+                          <select value={m.groupId} disabled={busy} onChange={(e) => handleAssignSubgroup(id, m.groupId, e.target.value)}
+                            className="text-xs rounded-lg px-2 py-1.5 outline-none shrink-0" style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)' }}>
+                            <option value={group.id}>Non assigné</option>
+                            {subgroups.map((sg) => <option key={sg.id} value={sg.id}>{sg.name}</option>)}
+                          </select>
+                        )}
+                        <button disabled={busy} onClick={() => handleRemoveAthlete(id, m.groupId)} className="text-xs font-semibold shrink-0" style={{ color: '#E4574A' }}>Retirer</button>
                       </div>
                     ))}
                   </div>

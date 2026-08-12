@@ -8,6 +8,9 @@ import {
   fetchClubInvites, createClubInvite, type ClubMember, type ClubInvite,
 } from '../../lib/queries/clubAdmin'
 import { fetchGroups, type GroupWithMembers } from '../../lib/queries/groups'
+import {
+  fetchSessionTypes, createSessionType, renameSessionType, deleteSessionType, type SessionTypeRow,
+} from '../../lib/queries/sessionTypes'
 
 function randomPassword(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
@@ -30,6 +33,12 @@ export default function CoachAdmin() {
     () => (profile ? fetchClubInvites(profile.club_id) : Promise.resolve([])),
     [profile?.club_id],
   )
+  const { data: sessionTypes, refetch: refetchSessionTypes } = useQuery<SessionTypeRow[]>(
+    () => (profile ? fetchSessionTypes(profile.club_id) : Promise.resolve([])),
+    [profile?.club_id],
+  )
+  const [newTypeName, setNewTypeName] = useState('')
+  const [savingType, setSavingType] = useState(false)
 
   const [clubName, setClubName] = useState('')
   const [savingName, setSavingName] = useState(false)
@@ -83,6 +92,29 @@ export default function CoachAdmin() {
     } finally {
       setCreatingInvite(null)
     }
+  }
+
+  async function handleCreateSessionType() {
+    if (!profile || !newTypeName.trim()) return
+    setSavingType(true)
+    try {
+      await createSessionType(profile.club_id, newTypeName.trim())
+      setNewTypeName('')
+      await refetchSessionTypes()
+    } finally {
+      setSavingType(false)
+    }
+  }
+
+  async function handleRenameSessionType(id: string, name: string) {
+    if (!name.trim()) return
+    await renameSessionType(id, name.trim())
+    await refetchSessionTypes()
+  }
+
+  async function handleDeleteSessionType(id: string) {
+    await deleteSessionType(id)
+    await refetchSessionTypes()
   }
 
   async function handleUpdateRole(m: ClubMember, role: 'athlete' | 'coach') {
@@ -263,6 +295,30 @@ export default function CoachAdmin() {
             })}
           </div>
         )}
+      </Card>
+
+      {/* ── Types de séance ── */}
+      <Card>
+        <SectionLabel>Types de séance</SectionLabel>
+        <div className="flex flex-wrap gap-2 mt-2 mb-3">
+          {sessionTypes?.map((t) => (
+            <div key={t.id} className="flex items-center gap-1.5 rounded-full pl-3 pr-1.5 py-1" style={{ background: 'var(--surface2)' }}>
+              <input defaultValue={t.name} onBlur={(e) => handleRenameSessionType(t.id, e.target.value)}
+                className="text-xs font-semibold bg-transparent outline-none" style={{ color: 'var(--text-1)', width: `${Math.max(t.name.length, 4)}ch` }} />
+              <button onClick={() => handleDeleteSessionType(t.id)} className="w-4 h-4 rounded-full flex items-center justify-center" style={{ color: 'var(--text-2)' }}>
+                <svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <input value={newTypeName} onChange={(e) => setNewTypeName(e.target.value)} placeholder="Ex: Tempo run"
+            className="flex-1 rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
+          <button onClick={handleCreateSessionType} disabled={savingType || !newTypeName.trim()}
+            className="text-xs font-bold px-3 py-2 rounded-[10px] disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+            + Ajouter
+          </button>
+        </div>
       </Card>
 
       {/* ── Comptes ── */}

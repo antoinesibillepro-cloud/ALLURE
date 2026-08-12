@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext'
 import WeeklyRecapModal from '../components/WeeklyRecapModal'
 import AddSessionSheet, { type SessionData } from '../components/AddSessionSheet'
 import { useQuery } from '../lib/useQuery'
-import { fetchAthleteSessions, validateSession, logFreeSession, saveSessionSplits, type AthleteSession } from '../lib/queries/sessions'
+import { fetchAthleteSessions, validateSession, logFreeSession, saveSessionSplits, fetchSessionWorkBlocks, type AthleteSession, type WorkBlockWithTargets } from '../lib/queries/sessions'
 import { fetchTodayCheckin, saveCheckin, type DailyCheckin } from '../lib/queries/checkins'
 import { fetchAthleteWeekStats, fetchAthleteTotalKm, fetchLastActivity } from '../lib/queries/stats'
 import { fetchNextCompetition, fetchMyGroups, fetchWeightLogs, saveWeightLog, type WeightLog } from '../lib/queries/profileExtras'
@@ -261,6 +261,13 @@ export default function HomeScreen() {
   const selectedIsToday = selectedDateIso === todayIso
   const selectedSession = (weekSessions ?? []).find((s) => isoDate(new Date(s.scheduled_at)) === selectedDateIso) ?? null
 
+  const { data: workBlocks } = useQuery<WorkBlockWithTargets[]>(
+    () => (selectedSession ? fetchSessionWorkBlocks(selectedSession.id) : Promise.resolve([])),
+    [selectedSession?.id],
+  )
+  const myGroupIds = new Set((myGroups ?? []).map((g) => g.id))
+  const myWorkBlock = workBlocks?.find((b) => b.group_id && myGroupIds.has(b.group_id)) ?? null
+
   const [rpe, setRpe] = useState<number | null>(null)
   const [actualDistance, setActualDistance] = useState('')
   const [actualDuration, setActualDuration] = useState('')
@@ -356,19 +363,29 @@ export default function HomeScreen() {
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>Temps par répétition (optionnel)</p>
-            <button onClick={() => setSplits((p) => [...p, ''])} className="text-xs font-bold" style={{ color: '#F2C400' }}>+ Ajouter</button>
+            <div className="flex items-center gap-3">
+              {!!myWorkBlock?.target_splits.length && splits.length === 0 && (
+                <button onClick={() => setSplits(myWorkBlock.target_splits.map(() => ''))} className="text-xs font-bold" style={{ color: '#5B91D8' }}>
+                  Pré-remplir ({myWorkBlock.target_splits.length})
+                </button>
+              )}
+              <button onClick={() => setSplits((p) => [...p, ''])} className="text-xs font-bold" style={{ color: '#F2C400' }}>+ Ajouter</button>
+            </div>
           </div>
           {splits.length > 0 && (
             <div className="space-y-1.5">
-              {splits.map((s, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <span className="text-xs w-14 shrink-0" style={{ color: 'var(--text-2)' }}>Rép. {i + 1}</span>
-                  <input value={s} onChange={(e) => setSplits((p) => p.map((v, j) => j === i ? e.target.value : v))}
-                    placeholder="secondes" inputMode="decimal"
-                    className="flex-1 px-3 py-1.5 rounded-[10px] text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
-                  <button onClick={() => setSplits((p) => p.filter((_, j) => j !== i))} className="text-xs" style={{ color: '#E4574A' }}>×</button>
-                </div>
-              ))}
+              {splits.map((s, i) => {
+                const target = myWorkBlock?.target_splits[i]?.target_time_seconds
+                return (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="text-xs w-14 shrink-0" style={{ color: 'var(--text-2)' }}>Rép. {i + 1}</span>
+                    <input value={s} onChange={(e) => setSplits((p) => p.map((v, j) => j === i ? e.target.value : v))}
+                      placeholder={target ? `cible ${target}s` : 'secondes'} inputMode="decimal"
+                      className="flex-1 px-3 py-1.5 rounded-[10px] text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+                    <button onClick={() => setSplits((p) => p.filter((_, j) => j !== i))} className="text-xs" style={{ color: '#E4574A' }}>×</button>
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>

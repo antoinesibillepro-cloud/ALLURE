@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Card, SectionLabel, Avatar } from '../components/ui'
 import { useApp } from '../context/AppContext'
 import { useQuery } from '../lib/useQuery'
-import { fetchChallenges, fetchChallengeLeaderboard, type Challenge, type LeaderboardEntry } from '../lib/queries/community'
+import { fetchChallenges, fetchChallengeLeaderboard, fetchWeeklyRankings, type Challenge, type LeaderboardEntry, type WeeklyRankings } from '../lib/queries/community'
 import { fetchClubActivityFeed, type ActivityItem } from '../lib/queries/coachStats'
 import { fetchBadgeDefinitions, fetchEarnedBadges, computeAndAwardBadges, type BadgeDef, type EarnedBadge } from '../lib/queries/badges'
 
@@ -20,9 +20,13 @@ function IcBadgeStar({ color = 'currentColor' }: { color?: string }) {
 function IcBadgeTrophy({ color = 'currentColor' }: { color?: string }) {
   return <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M5 2H11V8C11 10.2 9.2 12 7 12 4.8 12 3 10.2 3 8V2H5Z" stroke={color} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /><path d="M3 4H1.5C1.5 4 1 6 3 7" stroke={color} strokeWidth="1.4" strokeLinecap="round" /><path d="M11 4H12.5C12.5 4 13 6 11 7" stroke={color} strokeWidth="1.4" strokeLinecap="round" /><path d="M7 12V14M5 14H9" stroke={color} strokeWidth="1.4" strokeLinecap="round" /></svg>
 }
+function IcBadgeLeaf({ color = 'currentColor' }: { color?: string }) {
+  return <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M3 13C3 13 2 6 8 3C14 3 13 9 13 9C10 12 5 12 3 13Z" stroke={color} strokeWidth="1.4" strokeLinejoin="round" /><path d="M4 12C6 10 8 8 11 5" stroke={color} strokeWidth="1.2" strokeLinecap="round" /></svg>
+}
 const BADGE_ICONS: Record<string, (c: string) => React.ReactNode> = {
   flame: (c) => <IcBadgeFlame color={c} />, mountain: (c) => <IcBadgeMountain color={c} />,
   star: (c) => <IcBadgeStar color={c} />, trophy: (c) => <IcBadgeTrophy color={c} />,
+  leaf: (c) => <IcBadgeLeaf color={c} />,
 }
 
 function BadgesGrid({ profileId }: { profileId: string }) {
@@ -64,6 +68,49 @@ function BadgesGrid({ profileId }: { profileId: string }) {
           )
         })}
       </div>
+    </div>
+  )
+}
+
+const RANKING_LABEL: Record<keyof WeeklyRankings, string> = { km: 'Kilomètres', assiduite: 'Assiduité', recuperation: 'Récupération' }
+const RANKING_UNIT: Record<keyof WeeklyRankings, string> = { km: 'km', assiduite: '%', recuperation: '%' }
+
+function ClubKmBanner({ rankings }: { rankings: WeeklyRankings | null | undefined }) {
+  const total = (rankings?.km ?? []).reduce((s, e) => s + e.value, 0)
+  return (
+    <Card className="text-center !py-6" style={{ background: '#0E0E0D' }}>
+      <p className="text-[10px] uppercase tracking-widest font-bold" style={{ color: '#F2C400' }}>Cumul du club cette semaine</p>
+      <p className="text-4xl font-black mt-1" style={{ color: '#FFFFFF' }}>{total.toFixed(1)}<span className="text-lg font-bold ml-1" style={{ color: '#F2C400' }}>km</span></p>
+    </Card>
+  )
+}
+
+function RankingsTab({ rankings, profileId }: { rankings: WeeklyRankings | null | undefined; profileId: string }) {
+  const keys: (keyof WeeklyRankings)[] = ['km', 'assiduite', 'recuperation']
+  return (
+    <div className="space-y-3">
+      {keys.map((key) => {
+        const list = rankings?.[key] ?? []
+        return (
+          <Card key={key}>
+            <SectionLabel>{RANKING_LABEL[key]}</SectionLabel>
+            {!list.length ? (
+              <p className="text-sm text-center py-3" style={{ color: 'var(--text-2)' }}>Pas encore de données cette semaine.</p>
+            ) : (
+              <div className="space-y-1.5 mt-2">
+                {list.slice(0, 8).map((l, i) => (
+                  <div key={l.profileId} className="flex items-center gap-2">
+                    <span className="text-xs w-4 text-center font-bold" style={{ color: i < 3 ? '#F2C400' : 'var(--text-2)' }}>{i + 1}</span>
+                    <Avatar initials={l.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()} size={24} />
+                    <span className="text-xs flex-1" style={{ color: l.profileId === profileId ? '#F2C400' : 'var(--text-1)' }}>{l.name}</span>
+                    <span className="text-xs font-bold" style={{ color: 'var(--text-1)' }}>{l.value}{RANKING_UNIT[key]}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        )
+      })}
     </div>
   )
 }
@@ -114,7 +161,7 @@ function ChallengeCard({ challenge, profileId, clubId }: { challenge: Challenge;
 
 export default function CommunityScreen() {
   const { profile } = useApp()
-  const [tab, setTab] = useState<'defis' | 'feed'>('defis')
+  const [tab, setTab] = useState<'defis' | 'classements' | 'feed'>('defis')
 
   const { data: challenges } = useQuery<Challenge[]>(
     () => (profile ? fetchChallenges(profile.club_id) : Promise.resolve([])),
@@ -122,6 +169,10 @@ export default function CommunityScreen() {
   )
   const { data: feed } = useQuery<ActivityItem[]>(
     () => (profile ? fetchClubActivityFeed(profile.club_id, 15) : Promise.resolve([])),
+    [profile?.club_id],
+  )
+  const { data: rankings } = useQuery<WeeklyRankings>(
+    () => (profile ? fetchWeeklyRankings(profile.club_id) : Promise.resolve({ km: [], assiduite: [], recuperation: [] })),
     [profile?.club_id],
   )
 
@@ -135,8 +186,10 @@ export default function CommunityScreen() {
         <h1 className="text-2xl font-black" style={{ color: 'var(--text-1)' }}>Communauté</h1>
       </div>
 
+      <ClubKmBanner rankings={rankings} />
+
       <div className="flex gap-1 p-0.5 rounded-2xl w-fit" style={{ background: 'var(--surface2)' }}>
-        {([{ id: 'defis' as const, label: 'Défis' }, { id: 'feed' as const, label: 'Activité' }]).map((t) => (
+        {([{ id: 'defis' as const, label: 'Défis' }, { id: 'classements' as const, label: 'Classements' }, { id: 'feed' as const, label: 'Fil du club' }]).map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className="px-4 py-1.5 rounded-xl text-xs font-semibold transition-all"
             style={{ background: tab === t.id ? 'var(--card)' : 'transparent', color: tab === t.id ? 'var(--text-1)' : 'var(--text-2)' }}>
@@ -144,6 +197,8 @@ export default function CommunityScreen() {
           </button>
         ))}
       </div>
+
+      {tab === 'classements' && profile && <RankingsTab rankings={rankings} profileId={profile.id} />}
 
       {tab === 'defis' && (
         <div className="space-y-3">

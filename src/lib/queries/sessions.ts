@@ -1,5 +1,14 @@
 import { supabase } from '../supabase'
 
+export interface WorkBlockInput {
+  group_id: string | null
+  label: string
+  content: string
+  target_pace_sec_per_km: number | null
+  is_rest: boolean
+  target_splits: number[] // seconds per rep
+}
+
 export interface SessionInput {
   title: string
   type: string
@@ -8,8 +17,10 @@ export interface SessionInput {
   distance_km: number
   vma_percent: number
   scheduled_at: string // ISO date
+  time_slot?: 'matin' | 'apres-midi' | null
   group_ids: string[]
   status: 'draft' | 'published'
+  work_blocks?: WorkBlockInput[]
 }
 
 export async function createSession(clubId: string, coachId: string, input: SessionInput) {
@@ -25,6 +36,7 @@ export async function createSession(clubId: string, coachId: string, input: Sess
       distance_km: input.distance_km,
       vma_percent: input.vma_percent,
       scheduled_at: input.scheduled_at,
+      time_slot: input.time_slot ?? null,
       status: input.status,
     })
     .select()
@@ -37,7 +49,51 @@ export async function createSession(clubId: string, coachId: string, input: Sess
       .insert(input.group_ids.map((group_id) => ({ session_id: session.id, group_id })))
     if (assignError) throw assignError
   }
+
+  if (input.work_blocks?.length) {
+    for (const block of input.work_blocks) {
+      const { data: workBlock, error: blockErr } = await supabase
+        .from('session_work_blocks')
+        .insert({
+          session_id: session.id, group_id: block.group_id, label: block.label,
+          content: block.content, target_pace_sec_per_km: block.target_pace_sec_per_km, is_rest: block.is_rest,
+        })
+        .select('id')
+        .single()
+      if (blockErr) throw blockErr
+      if (block.target_splits.length > 0) {
+        const { error: splitsErr } = await supabase.from('session_target_splits').insert(
+          block.target_splits.map((seconds, i) => ({ work_block_id: workBlock.id, rep_number: i + 1, target_time_seconds: seconds })),
+        )
+        if (splitsErr) throw splitsErr
+      }
+    }
+  }
+
   return session
+}
+
+export interface WorkBlockWithTargets {
+  id: string
+  group_id: string | null
+  label: string | null
+  content: string | null
+  target_pace_sec_per_km: number | null
+  is_rest: boolean
+  target_splits: { rep_number: number; target_time_seconds: number }[]
+}
+
+export async function fetchSessionWorkBlocks(sessionId: string): Promise<WorkBlockWithTargets[]> {
+  const { data, error } = await supabase
+    .from('session_work_blocks')
+    .select('id, group_id, label, content, target_pace_sec_per_km, is_rest, session_target_splits(rep_number, target_time_seconds)')
+    .eq('session_id', sessionId)
+  if (error) throw error
+  return (data ?? []).map((b) => ({
+    id: b.id, group_id: b.group_id, label: b.label, content: b.content,
+    target_pace_sec_per_km: b.target_pace_sec_per_km, is_rest: b.is_rest,
+    target_splits: ((b.session_target_splits ?? []) as { rep_number: number; target_time_seconds: number }[]).sort((a, c) => a.rep_number - c.rep_number),
+  }))
 }
 
 export interface AthleteSession {
