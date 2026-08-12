@@ -14,6 +14,67 @@ export type Database = {
   }
   public: {
     Tables: {
+      challenges: {
+        Row: {
+          club_id: string
+          created_at: string
+          created_by: string
+          end_date: string
+          group_id: string | null
+          id: string
+          kind: Database["public"]["Enums"]["challenge_kind"]
+          start_date: string
+          target_value: number
+          title: string
+        }
+        Insert: {
+          club_id: string
+          created_at?: string
+          created_by: string
+          end_date: string
+          group_id?: string | null
+          id?: string
+          kind: Database["public"]["Enums"]["challenge_kind"]
+          start_date: string
+          target_value: number
+          title: string
+        }
+        Update: {
+          club_id?: string
+          created_at?: string
+          created_by?: string
+          end_date?: string
+          group_id?: string | null
+          id?: string
+          kind?: Database["public"]["Enums"]["challenge_kind"]
+          start_date?: string
+          target_value?: number
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "challenges_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "challenges_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "challenges_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       club_invites: {
         Row: {
           club_id: string
@@ -195,6 +256,50 @@ export type Database = {
             columns: ["group_id"]
             isOneToOne: false
             referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cross_training_logs: {
+        Row: {
+          created_at: string
+          date: string
+          discipline: Database["public"]["Enums"]["cross_training_discipline"]
+          distance_km: number | null
+          duration_min: number
+          id: string
+          notes: string | null
+          profile_id: string
+          rpe: number | null
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          discipline: Database["public"]["Enums"]["cross_training_discipline"]
+          distance_km?: number | null
+          duration_min: number
+          id?: string
+          notes?: string | null
+          profile_id: string
+          rpe?: number | null
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          discipline?: Database["public"]["Enums"]["cross_training_discipline"]
+          distance_km?: number | null
+          duration_min?: number
+          id?: string
+          notes?: string | null
+          profile_id?: string
+          rpe?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cross_training_logs_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -749,9 +854,11 @@ export type Database = {
       }
     }
     Enums: {
+      challenge_kind: "km" | "sessions" | "attendance"
       competition_kind: "competition" | "objective"
       completion_status: "done" | "skipped" | "free_session"
       conversation_kind: "dm" | "group" | "announcement"
+      cross_training_discipline: "velo" | "natation" | "musculation" | "gainage"
       injury_severity: "légère" | "modérée" | "grave"
       session_status: "draft" | "published"
       user_role: "athlete" | "coach"
@@ -882,9 +989,11 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      challenge_kind: ["km", "sessions", "attendance"],
       competition_kind: ["competition", "objective"],
       completion_status: ["done", "skipped", "free_session"],
       conversation_kind: ["dm", "group", "announcement"],
+      cross_training_discipline: ["velo", "natation", "musculation", "gainage"],
       injury_severity: ["légère", "modérée", "grave"],
       session_status: ["draft", "published"],
       user_role: ["athlete", "coach"],

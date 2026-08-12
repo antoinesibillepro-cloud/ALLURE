@@ -333,7 +333,7 @@ export default function App() {
       </header>
 
       {/* ── Content ── */}
-      <main className={`${isCoach ? 'pt-14 lg:pt-0' : 'pt-14 lg:pt-[60px]'} ${isMessaging && !showProfile ? '' : 'min-h-screen pb-28 lg:pb-6'}`}>
+      <main className={`${isCoach ? 'lg:pt-0' : 'lg:pt-[60px]'} ${isMessaging && !showProfile ? '' : 'min-h-screen pb-28 lg:pb-6'}`}>
         <div key={contentKey} className="page-enter h-full">
           {renderContent()}
         </div>

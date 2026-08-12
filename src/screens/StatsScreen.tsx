@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext'
 import { useQuery } from '../lib/useQuery'
 import { fetchAthleteWeekStats, fetchWellnessAverages, fetchWeeklyStreak } from '../lib/queries/stats'
 import { fetchWeightLogs, type WeightLog } from '../lib/queries/profileExtras'
+import { fetchDisciplineBreakdown, fetchWeeklyLoad, type DisciplineBreakdown } from '../lib/queries/crossTraining'
 import {
   fetchPersonalRecords, createPersonalRecord, updatePersonalRecord, deletePersonalRecord, type PersonalRecord,
 } from '../lib/queries/profileExtras'
@@ -70,6 +71,64 @@ function WellnessBar({ icon, label, value, max, color }: { icon: string; label: 
   )
 }
 
+const DISC_COLORS: Record<string, string> = {
+  'Course à pied': '#F2C400', 'Vélo': '#5B91D8', 'Natation': '#7B6FD6', 'Musculation': '#E4574A', 'Gainage': '#5EBA65',
+}
+
+function DonutChart({ segments }: { segments: DisciplineBreakdown[] }) {
+  const R = 64, CX = 80, CY = 80, STROKE = 22
+  const circ = 2 * Math.PI * R
+  const total = segments.reduce((s, d) => s + d.sessions, 0)
+  let acc = 0
+  const segs = segments.map((s) => {
+    const pct = total > 0 ? s.sessions / total : 0
+    const dash = pct * circ
+    const seg = { ...s, dash: Math.max(dash - 3, 0), offset: acc, pct: Math.round(pct * 100) }
+    acc += dash
+    return seg
+  })
+  return (
+    <div className="flex items-center gap-5">
+      <div className="relative shrink-0 flex items-center justify-center" style={{ width: 160, height: 160 }}>
+        <svg width={160} height={160} style={{ transform: 'rotate(-90deg)' }}>
+          <circle cx={CX} cy={CY} r={R} fill="none" stroke="var(--surface2)" strokeWidth={STROKE} />
+          {segs.map((s, i) => (
+            <circle key={i} cx={CX} cy={CY} r={R} fill="none" stroke={DISC_COLORS[s.discipline] ?? '#999'} strokeWidth={STROKE}
+              strokeDasharray={`${s.dash} ${circ - s.dash}`} strokeDashoffset={-s.offset} strokeLinecap="round" />
+          ))}
+        </svg>
+        <div className="absolute text-center">
+          <p className="text-3xl font-black leading-none" style={{ color: 'var(--text-1)' }}>{total}</p>
+          <p className="text-[9px] mt-1 font-semibold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>séances</p>
+        </div>
+      </div>
+      <div className="flex-1 space-y-2">
+        {segs.map((s) => (
+          <div key={s.discipline} className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full shrink-0" style={{ background: DISC_COLORS[s.discipline] ?? '#999' }} />
+            <span className="text-xs flex-1 truncate" style={{ color: 'var(--text-2)' }}>{s.discipline}</span>
+            <span className="text-xs font-black" style={{ color: 'var(--text-1)' }}>{s.pct}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function LoadChart({ data }: { data: { label: string; load: number }[] }) {
+  const max = Math.max(...data.map((d) => d.load), 1)
+  return (
+    <div className="flex items-end gap-1.5" style={{ height: 100 }}>
+      {data.map((d, i) => (
+        <div key={i} className="flex-1 flex flex-col items-center gap-1">
+          <div className="w-full rounded-t-sm" style={{ height: `${(d.load / max) * 76}px`, minHeight: d.load > 0 ? 3 : 0, background: i === data.length - 1 ? '#F2C400' : 'var(--surface3)' }} />
+          <span className="text-[8px]" style={{ color: 'var(--text-2)' }}>{d.label}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 type Tab = 'progres' | 'repartition' | 'records'
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -104,6 +163,16 @@ export default function StatsScreen() {
 
   const currentStreak = streak ? [...streak].reverse().findIndex((v) => !v) : 0
   const streakCount = currentStreak === -1 ? (streak?.length ?? 0) : currentStreak
+
+  const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString()
+  const { data: breakdown } = useQuery<DisciplineBreakdown[]>(
+    () => (profile ? fetchDisciplineBreakdown(profile.id, monthAgo, new Date().toISOString()) : Promise.resolve([])),
+    [profile?.id],
+  )
+  const { data: load } = useQuery(
+    () => (profile ? fetchWeeklyLoad(profile.id) : Promise.resolve([])),
+    [profile?.id],
+  )
 
   async function addRecord() {
     if (!profile || !newDist.trim() || !newTime.trim()) return
@@ -223,11 +292,20 @@ export default function StatsScreen() {
 
       {/* ═══════════════ RÉPARTITION ═══════════════ */}
       {tab === 'repartition' && (
-        <div className="p-4">
+        <div className="p-4 space-y-3">
           <Card>
-            <p className="text-sm text-center py-8" style={{ color: 'var(--text-2)' }}>
-              La répartition par discipline et la charge d'entraînement arrivent dans une prochaine version.
-            </p>
+            <p className="text-sm font-bold mb-4" style={{ color: 'var(--text-1)' }}>Par discipline · 30 derniers jours</p>
+            {!breakdown?.length ? (
+              <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Aucune séance enregistrée sur les 30 derniers jours.</p>
+            ) : (
+              <DonutChart segments={breakdown} />
+            )}
+          </Card>
+
+          <Card>
+            <p className="text-base font-bold mb-0.5" style={{ color: 'var(--text-1)' }}>Charge d&apos;entraînement</p>
+            <p className="text-xs mb-4" style={{ color: 'var(--text-2)' }}>RPE × durée · 8 dernières semaines</p>
+            {load && <LoadChart data={load} />}
           </Card>
         </div>
       )}

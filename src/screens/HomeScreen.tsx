@@ -201,6 +201,12 @@ export default function HomeScreen() {
     d.setDate(d.getDate() + i)
     return d
   })
+  const weekKmByDay = weekDates.map((d) => {
+    const iso = isoDate(d)
+    return (weekSessions ?? [])
+      .filter((s) => isoDate(new Date(s.scheduled_at)) === iso && s.completion?.status === 'done')
+      .reduce((sum, s) => sum + (s.distance_km ?? 0), 0)
+  })
 
   useQuery<DailyCheckin | null>(
     () => (profile ? fetchTodayCheckin(profile.id, todayIso).then((c) => { if (c) setForm(c); return c }) : Promise.resolve(null)),
@@ -231,15 +237,36 @@ export default function HomeScreen() {
     ? Math.max(0, Math.ceil((new Date(nextComp.event_date).getTime() - today.getTime()) / 86400000))
     : null
 
-  async function handleValidateSession() {
+  const [showRpe, setShowRpe] = useState(false)
+
+  async function handleValidateSession(rpe: number) {
     if (!profile || !todaySession) return
     setValidating(true)
     try {
-      await validateSession(todaySession.id, profile.id, null, '')
+      await validateSession(todaySession.id, profile.id, rpe, '')
       await refetchToday()
+      setShowRpe(false)
     } finally {
       setValidating(false)
     }
+  }
+
+  const RPE_OPTIONS = [{ v: 2, l: 'Facile' }, { v: 4, l: 'Modéré' }, { v: 6, l: 'Soutenu' }, { v: 8, l: 'Dur' }, { v: 10, l: 'Max' }]
+  function RpePicker() {
+    return (
+      <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+        <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-2)' }}>Ressenti de la séance (RPE)</p>
+        <div className="flex gap-1.5">
+          {RPE_OPTIONS.map((o) => (
+            <button key={o.v} disabled={validating} onClick={() => handleValidateSession(o.v)}
+              className="flex-1 py-2 rounded-[10px] text-[10px] font-bold disabled:opacity-50"
+              style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
+              {o.l}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
   }
 
   async function handleSaveCheckin() {
@@ -311,12 +338,13 @@ export default function HomeScreen() {
               </div>
             ))}
           </div>
-          {!isDone && (
-            <button onClick={handleValidateSession} disabled={validating}
-              className="btn-press w-full mt-4 rounded-[12px] py-3 text-sm font-bold bg-[#F2C400] text-[#0E0E0D] disabled:opacity-50">
-              {validating ? 'Validation…' : 'Valider la séance'}
+          {!isDone && !showRpe && (
+            <button onClick={() => setShowRpe(true)}
+              className="btn-press w-full mt-4 rounded-[12px] py-3 text-sm font-bold bg-[#F2C400] text-[#0E0E0D]">
+              Valider la séance
             </button>
           )}
+          {!isDone && showRpe && <RpePicker />}
         </>
       )}
     </Card>
@@ -642,14 +670,15 @@ export default function HomeScreen() {
                     </div>
 
                     {/* Action bar */}
-                    {!isDone && (
+                    {!isDone && !showRpe && (
                       <div className="flex items-center gap-3 px-4 py-3" style={{ borderTop: '1px solid var(--border)' }}>
-                        <button onClick={handleValidateSession} disabled={validating}
-                          className="btn-press flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-[#F2C400] text-[#0E0E0D] disabled:opacity-50">
-                          {validating ? 'Validation…' : 'Valider la séance'}
+                        <button onClick={() => setShowRpe(true)}
+                          className="btn-press flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-[#F2C400] text-[#0E0E0D]">
+                          Valider la séance
                         </button>
                       </div>
                     )}
+                    {!isDone && showRpe && <div className="px-4 pb-4"><RpePicker /></div>}
                   </>
                 )}
               </div>
@@ -724,7 +753,24 @@ export default function HomeScreen() {
         </div>
       </div>
 
-      {showRecap && <WeeklyRecapModal onClose={() => setShowRecap(false)} />}
+      {showRecap && (
+        <WeeklyRecapModal onClose={() => setShowRecap(false)} data={{
+          todaySession: todaySession ? {
+            title: todaySession.title, vmaPercent: todaySession.vma_percent,
+            durationMin: todaySession.duration_min, distanceKm: todaySession.distance_km,
+          } : null,
+          sessionsDone: weekStats?.sessionsDone ?? 0,
+          sessionsPlanned: weekStats?.sessionsPlanned ?? 0,
+          weekKmDone: weekStats?.kmDone ?? 0,
+          weekKmPlanned: weekStats?.kmPlanned ?? 0,
+          weekKmByDay,
+          weekMinutesDone: (weekSessions ?? []).filter((s) => s.completion?.status === 'done').reduce((sum, s) => sum + (s.duration_min ?? 0), 0),
+          nextComp: nextComp ? {
+            title: nextComp.title, eventDate: nextComp.event_date, distanceKm: nextComp.distance_km, targetTime: nextComp.target_time,
+          } : null,
+          currentWeightKg: weightLogs?.length ? weightLogs[weightLogs.length - 1].weight_kg : null,
+        }} />
+      )}
       {showAddSession && <AddSessionSheet onClose={() => setShowAddSession(false)} onSave={handleLogFreeSession} />}
     </div>
   )

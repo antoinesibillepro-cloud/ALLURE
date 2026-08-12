@@ -6,6 +6,7 @@ import { useQuery } from '../lib/useQuery'
 import { fetchAthleteSessions, validateSession, logFreeSession, type AthleteSession } from '../lib/queries/sessions'
 import { fetchStravaStatus, connectStrava, syncStrava, fetchStravaActivities, type StravaActivity } from '../lib/queries/strava'
 import { fetchCompetitions, createCompetition, toggleCompetitionDone, deleteCompetition, updateVma, type Competition } from '../lib/queries/profileExtras'
+import { fetchCrossTrainingLogs, createCrossTrainingLog, deleteCrossTrainingLog, type CrossTrainingLog, type Discipline } from '../lib/queries/crossTraining'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function paceStr(kmh: number): string {
@@ -62,11 +63,51 @@ export default function TrainingScreen() {
   const [newCompDistance, setNewCompDistance] = useState('')
   const [newCompTarget, setNewCompTarget] = useState('')
   const [savingComp, setSavingComp] = useState(false)
+  const [crossTab, setCrossTab] = useState<Discipline>('velo')
+  const [showAddCross, setShowAddCross] = useState(false)
+  const [newCrossDuration, setNewCrossDuration] = useState('')
+  const [newCrossDistance, setNewCrossDistance] = useState('')
+  const [newCrossNotes, setNewCrossNotes] = useState('')
+  const [savingCross, setSavingCross] = useState(false)
 
   const { data: competitions, refetch: refetchCompetitions } = useQuery<Competition[]>(
     () => (profile ? fetchCompetitions(profile.id) : Promise.resolve([])),
     [profile?.id],
   )
+
+  const { data: crossLogs, refetch: refetchCrossLogs } = useQuery<CrossTrainingLog[]>(
+    () => (profile ? fetchCrossTrainingLogs(profile.id, crossTab) : Promise.resolve([])),
+    [profile?.id, crossTab],
+  )
+  const { data: muscLogs, refetch: refetchMuscLogs } = useQuery<CrossTrainingLog[]>(
+    () => (profile ? fetchCrossTrainingLogs(profile.id, 'musculation') : Promise.resolve([])),
+    [profile?.id],
+  )
+
+  async function handleAddCross(discipline: Discipline, refetch: () => void) {
+    if (!profile || !newCrossDuration.trim()) return
+    setSavingCross(true)
+    try {
+      await createCrossTrainingLog(profile.id, {
+        discipline,
+        date: new Date().toISOString().slice(0, 10),
+        duration_min: parseInt(newCrossDuration, 10),
+        distance_km: newCrossDistance ? parseFloat(newCrossDistance) : null,
+        rpe: null,
+        notes: newCrossNotes || null,
+      })
+      setNewCrossDuration(''); setNewCrossDistance(''); setNewCrossNotes('')
+      setShowAddCross(false)
+      refetch()
+    } finally {
+      setSavingCross(false)
+    }
+  }
+
+  async function handleDeleteCross(id: string, refetch: () => void) {
+    await deleteCrossTrainingLog(id)
+    refetch()
+  }
 
   function handleVmaChange(next: number) {
     setVma(next)
@@ -138,7 +179,7 @@ export default function TrainingScreen() {
     if (!profile) return
     setValidatingId(sessionId)
     try {
-      await validateSession(sessionId, profile.id, null, '')
+      await validateSession(sessionId, profile.id, 6, '')
       await refetchMonth()
     } finally {
       setValidatingId(null)
@@ -412,9 +453,66 @@ export default function TrainingScreen() {
           <SectionLabel>Croisé</SectionLabel>
         </div>
         <Card>
-          <p className="text-sm text-center py-6" style={{ color: 'var(--text-2)' }}>
-            Le suivi vélo/natation/gainage arrive dans une prochaine version.
-          </p>
+          <div className="flex gap-1 mb-4 p-0.5 rounded-2xl w-fit" style={{ background: 'var(--surface2)' }}>
+            {([
+              { id: 'velo' as const, icon: '🚴', label: 'Vélo' },
+              { id: 'natation' as const, icon: '🏊', label: 'Natation' },
+              { id: 'gainage' as const, icon: '🧘', label: 'Gainage' },
+            ]).map((t) => (
+              <button key={t.id} onClick={() => { setCrossTab(t.id); setShowAddCross(false) }}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all"
+                style={{
+                  background: crossTab === t.id ? 'var(--card)' : 'transparent',
+                  color: crossTab === t.id ? 'var(--text-1)' : 'var(--text-2)',
+                  boxShadow: crossTab === t.id ? '0 1px 4px rgba(0,0,0,0.12)' : 'none',
+                }}>
+                {t.icon} {t.label}
+              </button>
+            ))}
+          </div>
+
+          {showAddCross && (
+            <div className="mb-4 p-3 rounded-xl space-y-2" style={{ background: 'var(--surface2)' }}>
+              <div className="grid grid-cols-2 gap-2">
+                <input value={newCrossDuration} onChange={(e) => setNewCrossDuration(e.target.value)} placeholder="Durée (min)" inputMode="numeric"
+                  className="rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+                <input value={newCrossDistance} onChange={(e) => setNewCrossDistance(e.target.value)} placeholder="Distance km (option.)"
+                  className="rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+              </div>
+              <input value={newCrossNotes} onChange={(e) => setNewCrossNotes(e.target.value)} placeholder="Notes (optionnel)"
+                className="w-full rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+              <div className="flex gap-2">
+                <button onClick={() => handleAddCross(crossTab, refetchCrossLogs)} disabled={savingCross || !newCrossDuration.trim()}
+                  className="text-xs font-bold px-3 py-1.5 rounded-[10px] disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+                  {savingCross ? '…' : 'Ajouter'}
+                </button>
+                <button onClick={() => setShowAddCross(false)} className="text-xs font-semibold px-3 py-1.5 rounded-[10px]" style={{ color: 'var(--text-2)' }}>Annuler</button>
+              </div>
+            </div>
+          )}
+
+          {!crossLogs?.length ? (
+            <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Aucune séance enregistrée.</p>
+          ) : (
+            <div className="space-y-0">
+              {crossLogs.map((log) => (
+                <div key={log.id} className="flex items-center justify-between py-2.5 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
+                  <span className="text-sm" style={{ color: 'var(--text-2)' }}>{new Date(log.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</span>
+                  <span className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>
+                    {log.distance_km ? `${log.distance_km} km · ` : ''}{log.duration_min} min
+                  </span>
+                  <button onClick={() => handleDeleteCross(log.id, refetchCrossLogs)} className="text-xs font-semibold text-[#E4574A]">×</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!showAddCross && (
+            <button onClick={() => setShowAddCross(true)} className="mt-3 text-sm font-semibold text-[#F2C400] flex items-center gap-1.5">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1.5V10.5M1.5 6H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+              Ajouter une séance {crossTab === 'velo' ? 'vélo' : crossTab === 'natation' ? 'natation' : 'gainage'}
+            </button>
+          )}
         </Card>
       </div>
 
@@ -488,9 +586,46 @@ export default function TrainingScreen() {
               </div>
             </>
           ) : (
-            <p className="text-sm text-center py-6" style={{ color: 'var(--text-2)' }}>
-              Le suivi musculation arrive dans une prochaine version.
-            </p>
+            <>
+              {showAddCross && (
+                <div className="mb-4 p-3 rounded-xl space-y-2" style={{ background: 'var(--surface2)' }}>
+                  <input value={newCrossDuration} onChange={(e) => setNewCrossDuration(e.target.value)} placeholder="Durée (min)" inputMode="numeric"
+                    className="w-full rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+                  <input value={newCrossNotes} onChange={(e) => setNewCrossNotes(e.target.value)} placeholder="Notes (ex: Haut du corps, squat 60kg...)"
+                    className="w-full rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
+                  <div className="flex gap-2">
+                    <button onClick={() => handleAddCross('musculation', refetchMuscLogs)} disabled={savingCross || !newCrossDuration.trim()}
+                      className="text-xs font-bold px-3 py-1.5 rounded-[10px] disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+                      {savingCross ? '…' : 'Ajouter'}
+                    </button>
+                    <button onClick={() => setShowAddCross(false)} className="text-xs font-semibold px-3 py-1.5 rounded-[10px]" style={{ color: 'var(--text-2)' }}>Annuler</button>
+                  </div>
+                </div>
+              )}
+              {!muscLogs?.length ? (
+                <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Aucune séance de musculation enregistrée.</p>
+              ) : (
+                <div className="space-y-0">
+                  {muscLogs.map((log) => (
+                    <div key={log.id} className="py-2.5 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>
+                          {new Date(log.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} · {log.duration_min} min
+                        </span>
+                        <button onClick={() => handleDeleteCross(log.id, refetchMuscLogs)} className="text-xs font-semibold text-[#E4574A]">×</button>
+                      </div>
+                      {log.notes && <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>{log.notes}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!showAddCross && (
+                <button onClick={() => setShowAddCross(true)} className="mt-3 text-sm font-semibold text-[#F2C400] flex items-center gap-1.5">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1.5V10.5M1.5 6H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+                  Ajouter une séance musculation
+                </button>
+              )}
+            </>
           )}
         </Card>
       </div>

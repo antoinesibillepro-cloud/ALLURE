@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 type Sport = 'course' | 'velo' | 'natation' | 'muscu' | 'autre'
 
@@ -81,7 +82,7 @@ export default function AddSessionSheet({ date, onClose, onSave }: Props) {
   const showDistance = sport !== 'muscu' && sport !== 'autre'
   const sportInfo = SPORTS.find(s => s.id === sport)!
 
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       <div className="fixed inset-0 z-[90]" style={{ background: 'rgba(0,0,0,0.5)', opacity: visible ? 1 : 0, transition: 'opacity 0.3s' }}
@@ -217,6 +218,7 @@ export default function AddSessionSheet({ date, onClose, onSave }: Props) {
           )}
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   )
 }

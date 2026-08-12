@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 // ── Animated ring ─────────────────────────────────────────────────────────────
 function Ring({ value, max, size = 72, color = '#F2C400' }: { value: number; max: number; size?: number; color?: string }) {
@@ -78,65 +79,71 @@ function FeedbackSlide() {
 }
 
 // ── slide definitions ─────────────────────────────────────────────────────────
-const WEEK_KM = [12, 14, 0, 18, 10, 9, 4]
 const WEEK_DAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D']
 
 interface SlideProps { active: boolean }
 
-function Slide1({ active }: SlideProps) {
+export interface RecapData {
+  todaySession: { title: string; vmaPercent: number | null; durationMin: number | null; distanceKm: number | null } | null
+  sessionsDone: number
+  sessionsPlanned: number
+  weekKmDone: number
+  weekKmPlanned: number
+  weekKmByDay: number[]
+  weekMinutesDone: number
+  nextComp: { title: string; eventDate: string | null; distanceKm: number | null; targetTime: string | null } | null
+  currentWeightKg: number | null
+}
+
+function Slide1({ active, data }: SlideProps & { data: RecapData }) {
+  const { todaySession, sessionsDone, sessionsPlanned } = data
   return (
     <div className="flex flex-col justify-end min-h-[340px]">
       <p className="text-xs font-bold tracking-[0.15em] mb-3" style={{ color: '#F2C400' }}>AUJOURD&apos;HUI</p>
-      <h2 className="text-[40px] font-black leading-tight text-white">Fractionné<br />10×400m</h2>
-      <p className="text-sm mt-2" style={{ color: 'rgba(255,255,255,0.5)' }}>88% VMA · 55 min · 12 km prévus</p>
+      {todaySession ? (
+        <>
+          <h2 className="text-[40px] font-black leading-tight text-white">{todaySession.title}</h2>
+          <p className="text-sm mt-2" style={{ color: 'rgba(255,255,255,0.5)' }}>
+            {todaySession.vmaPercent ? `${todaySession.vmaPercent}% VMA · ` : ''}{todaySession.durationMin ? `${todaySession.durationMin} min · ` : ''}{todaySession.distanceKm ? `${todaySession.distanceKm} km prévus` : ''}
+          </p>
+        </>
+      ) : (
+        <h2 className="text-[32px] font-black leading-tight text-white">Aucune séance<br />aujourd&apos;hui</h2>
+      )}
 
       <div className="mt-6 flex items-center gap-4">
         <div className="relative">
-          {active && <Ring value={5} max={7} size={72} color="#F2C400" />}
+          {active && <Ring value={sessionsDone} max={Math.max(sessionsPlanned, 1)} size={72} color="#F2C400" />}
           {!active && <svg width="72" height="72" viewBox="0 0 72 72"><circle cx="36" cy="36" r="30" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="5" /></svg>}
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-base font-black text-white">5/7</span>
+            <span className="text-base font-black text-white">{sessionsDone}/{sessionsPlanned}</span>
           </div>
         </div>
         <div>
           <p className="text-xs font-semibold mb-1" style={{ color: 'rgba(255,255,255,0.5)' }}>Séances cette semaine</p>
-          <div className="flex gap-1.5">
-            {[1,2,3,4,5,6,7].map(i => (
-              <div key={i} className="w-5 h-5 rounded-full flex items-center justify-center"
-                style={{ background: i <= 5 ? '#F2C400' : 'rgba(255,255,255,0.12)' }}>
-                {i <= 5 && <svg width="7" height="5" viewBox="0 0 7 5" fill="none"><path d="M1 2.5L2.5 4L6 1" stroke="#0E0E0D" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
-              </div>
-            ))}
-          </div>
         </div>
-      </div>
-
-      <div className="mt-5 px-4 py-3 rounded-2xl flex items-center gap-3"
-        style={{ background: 'rgba(242,196,0,0.1)', border: '1px solid rgba(242,196,0,0.2)' }}>
-        <div className="w-2 h-2 rounded-full bg-[#F2C400]" />
-        <span className="text-sm font-semibold text-white">Séance prévue cet après-midi</span>
-        <span className="ml-auto text-xs font-bold text-[#F2C400]">16:00 →</span>
       </div>
     </div>
   )
 }
 
-function Slide2({ active }: SlideProps) {
+function Slide2({ active, data }: SlideProps & { data: RecapData }) {
+  const { weekKmDone, weekKmPlanned, weekKmByDay, weekMinutesDone, sessionsDone } = data
+  const pctObjectif = weekKmPlanned > 0 ? Math.round((weekKmDone / weekKmPlanned) * 100) : 0
   return (
     <div className="flex flex-col justify-end min-h-[340px]">
       <p className="text-xs font-bold tracking-[0.15em] mb-3" style={{ color: '#5B91D8' }}>CETTE SEMAINE</p>
-      <h2 className="text-[40px] font-black leading-tight text-white">67 km<br /><span className="text-[28px]">parcourus</span></h2>
-      <p className="text-sm mt-2" style={{ color: 'rgba(255,255,255,0.5)' }}>5h42 d&apos;entraînement · 5 séances</p>
+      <h2 className="text-[40px] font-black leading-tight text-white">{Math.round(weekKmDone)} km<br /><span className="text-[28px]">parcourus</span></h2>
+      <p className="text-sm mt-2" style={{ color: 'rgba(255,255,255,0.5)' }}>{Math.round(weekMinutesDone / 60)}h{String(weekMinutesDone % 60).padStart(2, '0')} d&apos;entraînement · {sessionsDone} séance{sessionsDone > 1 ? 's' : ''}</p>
 
       <div className="mt-6">
-        {active && <MiniBar values={WEEK_KM} labels={WEEK_DAYS} color="#5B91D8" />}
+        {active && <MiniBar values={weekKmByDay} labels={WEEK_DAYS} color="#5B91D8" />}
       </div>
 
-      <div className="mt-5 grid grid-cols-3 gap-2">
+      <div className="mt-5 grid grid-cols-2 gap-2">
         {[
-          { val: '84%', label: 'Objectif km', color: '#5EBA65' },
-          { val: '342', label: 'min totales', color: '#F2C400' },
-          { val: '680', label: 'm dénivelé', color: '#7B6FD6' },
+          { val: `${pctObjectif}%`, label: 'Objectif km', color: '#5EBA65' },
+          { val: `${weekMinutesDone}`, label: 'min totales', color: '#F2C400' },
         ].map(s => (
           <div key={s.label} className="rounded-2xl px-3 py-2.5 flex flex-col gap-0.5"
             style={{ background: 'rgba(255,255,255,0.06)' }}>
@@ -149,35 +156,38 @@ function Slide2({ active }: SlideProps) {
   )
 }
 
-function Slide3({ active }: SlideProps) {
+function Slide3({ active, data }: SlideProps & { data: RecapData }) {
+  const { nextComp, currentWeightKg } = data
+  const daysLeft = nextComp?.eventDate ? Math.max(0, Math.ceil((new Date(nextComp.eventDate).getTime() - Date.now()) / 86400000)) : null
   return (
     <div className="flex flex-col justify-end min-h-[340px]">
       <p className="text-xs font-bold tracking-[0.15em] mb-3" style={{ color: '#E4574A' }}>PROCHAINE ÉCHÉANCE</p>
-      <h2 className="text-[36px] font-black leading-tight text-white">5000 m<br /><span style={{ color: '#E4574A' }}>dans 47 j</span></h2>
-      <p className="text-sm mt-2" style={{ color: 'rgba(255,255,255,0.5)' }}>Objectif : 14&apos;30 · 26 sept 2026</p>
+      {nextComp ? (
+        <>
+          <h2 className="text-[36px] font-black leading-tight text-white">{nextComp.title}<br />{daysLeft !== null && <span style={{ color: '#E4574A' }}>dans {daysLeft} j</span>}</h2>
+          <p className="text-sm mt-2" style={{ color: 'rgba(255,255,255,0.5)' }}>
+            {nextComp.targetTime ? `Objectif : ${nextComp.targetTime} · ` : ''}{nextComp.eventDate ? new Date(nextComp.eventDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : ''}
+          </p>
+        </>
+      ) : (
+        <h2 className="text-[32px] font-black leading-tight text-white">Aucune compétition<br />programmée</h2>
+      )}
 
       <div className="mt-6 flex gap-4 items-center">
-        {active && (
-          <>
-            <CountdownUnit value={47} label="j" color="#E4574A" />
-            <CountdownUnit value={14} label="h" color="#F97316" />
-            <CountdownUnit value={30} label="min" color="#F2C400" />
-          </>
+        {active && daysLeft !== null && (
+          <CountdownUnit value={daysLeft} label="jours" color="#E4574A" />
         )}
         <div className="flex-1 pl-2">
           <p className="text-xs font-bold mb-1" style={{ color: 'rgba(255,255,255,0.4)' }}>POIDS ACTUEL</p>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-4xl font-black text-white">55</span>
-            <span className="text-lg" style={{ color: 'rgba(255,255,255,0.5)' }}>kg</span>
-          </div>
-          <p className="text-[10px] mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>dernier relevé · 10 août</p>
+          {currentWeightKg ? (
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-4xl font-black text-white">{currentWeightKg}</span>
+              <span className="text-lg" style={{ color: 'rgba(255,255,255,0.5)' }}>kg</span>
+            </div>
+          ) : (
+            <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>Non renseigné</p>
+          )}
         </div>
-      </div>
-
-      <div className="mt-4 px-4 py-3 rounded-2xl"
-        style={{ background: 'rgba(228,87,74,0.1)', border: '1px solid rgba(228,87,74,0.25)' }}>
-        <p className="text-xs font-bold text-[#E4574A] mb-1">PLAN EN COURS</p>
-        <p className="text-sm text-white">Préparation 5000m · Semaine 3/12</p>
       </div>
     </div>
   )
@@ -199,12 +209,13 @@ function Slide4() {
 // ── Modal ─────────────────────────────────────────────────────────────────────
 const SLIDE_COLORS = ['#F2C400', '#5B91D8', '#E4574A', '#5EBA65']
 
-interface Props { onClose: () => void }
+interface Props { onClose: () => void; data: RecapData }
 
-export default function WeeklyRecapModal({ onClose }: Props) {
+export default function WeeklyRecapModal({ onClose, data }: Props) {
   const [slide, setSlide] = useState(0)
   const [visible, setVisible] = useState(false)
   const touchX = useRef<number | null>(null)
+  const touchY = useRef<number | null>(null)
 
   useEffect(() => { requestAnimationFrame(() => setVisible(true)) }, [])
 
@@ -212,17 +223,25 @@ export default function WeeklyRecapModal({ onClose }: Props) {
   function prev() { setSlide(s => Math.max(0, s - 1)) }
   function next() { setSlide(s => Math.min(3, s + 1)) }
 
-  function onTouchStart(e: React.TouchEvent) { touchX.current = e.touches[0].clientX }
+  function onTouchStart(e: React.TouchEvent) {
+    touchX.current = e.touches[0].clientX
+    touchY.current = e.touches[0].clientY
+  }
   function onTouchEnd(e: React.TouchEvent) {
-    if (touchX.current === null) return
+    if (touchX.current === null || touchY.current === null) return
     const dx = e.changedTouches[0].clientX - touchX.current
-    if (dx < -50) next(); else if (dx > 50) prev()
+    const dy = e.changedTouches[0].clientY - touchY.current
+    // Ignore mostly-vertical gestures so a scroll attempt doesn't accidentally flip slides.
+    if (Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx < -60) next(); else if (dx > 60) prev()
+    }
     touchX.current = null
+    touchY.current = null
   }
 
   const accent = SLIDE_COLORS[slide]
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[100] flex flex-col overflow-hidden"
       style={{
         background: '#0B0B0A',
@@ -262,10 +281,10 @@ export default function WeeklyRecapModal({ onClose }: Props) {
       {/* Slides container */}
       <div className="flex-1 flex flex-col justify-end px-7 pb-28 pt-24 overflow-hidden">
         <div className="overflow-hidden">
-          <div className="flex" style={{ transform: `translateX(${-slide * 100}%)`, transition: 'transform 0.42s cubic-bezier(0.4,0,0.2,1)', width: '400%' }}>
-            <div style={{ width: '25%' }}><Slide1 active={slide === 0} /></div>
-            <div style={{ width: '25%' }}><Slide2 active={slide === 1} /></div>
-            <div style={{ width: '25%' }}><Slide3 active={slide === 2} /></div>
+          <div className="flex" style={{ transform: `translateX(${-slide * 25}%)`, transition: 'transform 0.42s cubic-bezier(0.4,0,0.2,1)', width: '400%' }}>
+            <div style={{ width: '25%' }}><Slide1 active={slide === 0} data={data} /></div>
+            <div style={{ width: '25%' }}><Slide2 active={slide === 1} data={data} /></div>
+            <div style={{ width: '25%' }}><Slide3 active={slide === 2} data={data} /></div>
             <div style={{ width: '25%' }}><Slide4 /></div>
           </div>
         </div>
@@ -294,6 +313,7 @@ export default function WeeklyRecapModal({ onClose }: Props) {
         </button>
       )}
 
-    </div>
+    </div>,
+    document.body,
   )
 }

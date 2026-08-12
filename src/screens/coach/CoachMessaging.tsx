@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { Avatar, IconSearch } from '../../components/ui'
 import { useApp } from '../../context/AppContext'
 import { useQuery } from '../../lib/useQuery'
@@ -218,7 +219,7 @@ export default function CoachMessaging() {
 
   return (
     <>
-      {showBroadcast && (
+      {showBroadcast && createPortal(
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)' }}>
           <div className="w-full md:max-w-md rounded-t-3xl md:rounded-3xl p-6 space-y-4" style={{ background: 'var(--card)', boxShadow: '0 -8px 40px rgba(0,0,0,0.3)' }}>
             <div className="flex items-center justify-between">
@@ -281,7 +282,8 @@ export default function CoachMessaging() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       <div className="md:hidden" style={{ height: 'calc(100dvh - 7rem)' }}>
