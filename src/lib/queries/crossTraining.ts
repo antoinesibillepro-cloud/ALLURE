@@ -34,6 +34,34 @@ export async function deleteCrossTrainingLog(id: string) {
   if (error) throw error
 }
 
+/** Sum of km per week for a discipline, over the last `weeks` weeks. */
+export async function fetchWeeklyDisciplineKm(profileId: string, discipline: Discipline, weeks = 8): Promise<{ label: string; km: number }[]> {
+  const now = new Date()
+  const day = (now.getDay() + 6) % 7
+  const thisWeekStart = new Date(now); thisWeekStart.setHours(0, 0, 0, 0); thisWeekStart.setDate(thisWeekStart.getDate() - day)
+  const earliest = new Date(thisWeekStart.getTime() - weeks * 7 * 86400000)
+
+  const { data } = await supabase
+    .from('cross_training_logs')
+    .select('date, distance_km')
+    .eq('profile_id', profileId)
+    .eq('discipline', discipline)
+    .gte('date', earliest.toISOString().slice(0, 10))
+
+  const results: { label: string; km: number }[] = []
+  for (let i = weeks - 1; i >= 0; i--) {
+    const start = new Date(thisWeekStart.getTime() - i * 7 * 86400000)
+    const end = new Date(start.getTime() + 7 * 86400000)
+    let km = 0
+    for (const r of data ?? []) {
+      const t = new Date(r.date).getTime()
+      if (t >= start.getTime() && t < end.getTime()) km += r.distance_km ?? 0
+    }
+    results.push({ label: start.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }), km })
+  }
+  return results
+}
+
 export interface DisciplineBreakdown {
   discipline: string
   sessions: number

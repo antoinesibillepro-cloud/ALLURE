@@ -44,16 +44,50 @@ export function DonutChart({ segments }: { segments: DisciplineBreakdown[] }) {
   )
 }
 
-export function LoadChart({ data }: { data: { label: string; load: number }[] }) {
-  const max = Math.max(...data.map((d) => d.load), 1)
+/** Filled line/area trend chart with gridlines — matches the Figma "Charge d'entraînement" style. */
+export function AreaTrendChart({ data, color = '#F2C400', unit = '' }: { data: { label: string; value: number }[]; color?: string; unit?: string }) {
+  const W = 320, H = 140, PAD_L = 30, PAD_B = 16, PAD_T = 8
+  const max = Math.max(...data.map((d) => d.value), 1)
+  const gridSteps = 4
+  const plotW = W - PAD_L
+  const plotH = H - PAD_B - PAD_T
+  const px = (i: number) => PAD_L + (data.length > 1 ? (i / (data.length - 1)) * plotW : plotW / 2)
+  const py = (v: number) => PAD_T + plotH - (v / max) * plotH
+  const pts = data.map((d, i) => `${px(i).toFixed(1)},${py(d.value).toFixed(1)}`).join(' ')
+  const area = `${PAD_L},${PAD_T + plotH} ${pts} ${W},${PAD_T + plotH}`
+  const gid = `area-${color.replace('#', '')}`
   return (
-    <div className="flex items-end gap-1.5" style={{ height: 100 }}>
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.35" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {Array.from({ length: gridSteps + 1 }, (_, i) => {
+        const v = (max / gridSteps) * i
+        const y = py(v)
+        return (
+          <g key={i}>
+            <line x1={PAD_L} y1={y} x2={W} y2={y} stroke="var(--border)" strokeWidth="1" />
+            <text x={0} y={y + 3} fontSize="8" fill="var(--text-2)">{Math.round(v)}{unit}</text>
+          </g>
+        )
+      })}
+      <polygon points={area} fill={`url(#${gid})`} />
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       {data.map((d, i) => (
-        <div key={i} className="flex-1 flex flex-col items-center gap-1">
-          <div className="w-full rounded-t-sm" style={{ height: `${(d.load / max) * 76}px`, minHeight: d.load > 0 ? 3 : 0, background: i === data.length - 1 ? '#F2C400' : 'var(--surface3)' }} />
-          <span className="text-[8px]" style={{ color: 'var(--text-2)' }}>{d.label}</span>
-        </div>
+        <circle key={i} cx={px(i)} cy={py(d.value)} r={i === data.length - 1 ? 3 : 0} fill={color} />
       ))}
-    </div>
+      {data.map((d, i) => (
+        (i === 0 || i === data.length - 1 || i % Math.ceil(data.length / 6) === 0) && (
+          <text key={i} x={px(i)} y={H - 2} fontSize="8" fill="var(--text-2)" textAnchor="middle">{d.label}</text>
+        )
+      ))}
+    </svg>
   )
+}
+
+export function LoadChart({ data }: { data: { label: string; load: number }[] }) {
+  return <AreaTrendChart data={data.map((d) => ({ label: d.label, value: d.load }))} color="#F2C400" />
 }

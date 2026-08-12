@@ -94,33 +94,54 @@ export default function CoachCommunity() {
       </div>
 
       {showCreate && (
-        <Card className="space-y-2">
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Titre du défi (ex: 100km en août)"
-            className="w-full rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
-          <div className="flex gap-2">
-            {(['km', 'sessions', 'attendance'] as ChallengeKind[]).map((k) => (
-              <button key={k} onClick={() => setKind(k)} className="flex-1 py-2 rounded-[10px] text-xs font-bold capitalize"
-                style={{ background: kind === k ? '#F2C400' : 'var(--surface2)', color: kind === k ? '#0E0E0D' : 'var(--text-2)' }}>
-                {KIND_LABEL[k]}
-              </button>
-            ))}
+        <Card className="space-y-3">
+          <div>
+            <label className="text-[10px] uppercase tracking-widest font-bold mb-1.5 block" style={{ color: 'var(--text-2)' }}>Titre du défi</label>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex: 100km en août"
+              className="w-full rounded-[10px] px-3 py-2.5 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
           </div>
-          <input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="Objectif (nombre)"
-            className="w-full rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+          <div>
+            <label className="text-[10px] uppercase tracking-widest font-bold mb-1.5 block" style={{ color: 'var(--text-2)' }}>Type d&apos;objectif</label>
+            <div className="flex gap-2">
+              {(['km', 'sessions', 'attendance'] as ChallengeKind[]).map((k) => (
+                <button key={k} onClick={() => setKind(k)} className="flex-1 py-2 rounded-[10px] text-xs font-bold capitalize"
+                  style={{ background: kind === k ? '#F2C400' : 'var(--surface2)', color: kind === k ? '#0E0E0D' : 'var(--text-2)' }}>
+                  {KIND_LABEL[k]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] uppercase tracking-widest font-bold mb-1.5 block" style={{ color: 'var(--text-2)' }}>Objectif ({KIND_LABEL[kind]})</label>
+            <input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="Ex: 100" inputMode="numeric"
+              className="w-full rounded-[10px] px-3 py-2.5 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
+          </div>
           <div className="grid grid-cols-2 gap-2">
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
-              className="rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
-            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
-              className="rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+            <div>
+              <label className="text-[10px] uppercase tracking-widest font-bold mb-1.5 block" style={{ color: 'var(--text-2)' }}>Début</label>
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
+                className="w-full rounded-[10px] px-3 py-2.5 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase tracking-widest font-bold mb-1.5 block" style={{ color: 'var(--text-2)' }}>Fin</label>
+              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
+                className="w-full rounded-[10px] px-3 py-2.5 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
+            </div>
           </div>
-          <select value={groupId} onChange={(e) => setGroupId(e.target.value)}
-            className="w-full rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
-            <option value="">Tout le club</option>
-            {groups?.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-          </select>
-          <BtnPrimary onClick={handleCreate} disabled={saving || !title.trim() || !target || !endDate}>
-            {saving ? '…' : 'Créer le défi'}
-          </BtnPrimary>
+          <div>
+            <label className="text-[10px] uppercase tracking-widest font-bold mb-1.5 block" style={{ color: 'var(--text-2)' }}>Participants</label>
+            <select value={groupId} onChange={(e) => setGroupId(e.target.value)}
+              className="w-full rounded-[10px] px-3 py-2.5 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)' }}>
+              <option value="">Tout le club</option>
+              {groups?.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <BtnPrimary onClick={handleCreate} disabled={saving || !title.trim() || !target || !endDate}>
+              {saving ? '…' : 'Créer le défi'}
+            </BtnPrimary>
+            <button onClick={() => setShowCreate(false)} className="text-sm font-semibold px-4" style={{ color: 'var(--text-2)' }}>Annuler</button>
+          </div>
         </Card>
       )}
 

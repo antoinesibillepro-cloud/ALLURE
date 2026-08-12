@@ -1,4 +1,6 @@
-import { useState, type ReactElement } from 'react'
+import { useState, useEffect, type ReactElement } from 'react'
+import { fetchConversations } from './lib/queries/messages'
+import { subscribeToOwnMessages, fireNotification } from './lib/notifications'
 import { useApp } from './context/AppContext'
 import AuthScreen from './screens/AuthScreen'
 import HomeScreen from './screens/HomeScreen'
@@ -185,6 +187,20 @@ export default function App() {
   const [aScreen, setAScreen] = useState<AScreen>('home')
   const [cScreen, setCScreen] = useState<CScreen>('dashboard')
   const [showProfile, setShowProfile] = useState(false)
+
+  useEffect(() => {
+    if (!profile) return
+    let unsub: (() => void) | null = null
+    let cancelled = false
+    fetchConversations(profile.id, profile.club_id).then((convs) => {
+      if (cancelled) return
+      unsub = subscribeToOwnMessages(profile.id, convs.map((c) => c.id), ({ body }) => {
+        if (profile.notification_prefs?.messages === false) return
+        fireNotification('Nouveau message', body)
+      })
+    })
+    return () => { cancelled = true; unsub?.() }
+  }, [profile?.id, profile?.club_id, profile?.notification_prefs?.messages])
 
   if (profileLoading) {
     return (

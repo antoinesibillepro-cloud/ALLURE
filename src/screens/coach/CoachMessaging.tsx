@@ -108,11 +108,28 @@ export default function CoachMessaging() {
             Diffuser
           </button>
         </div>
-        <div className="flex items-center gap-2 rounded-2xl px-3 py-2.5 mb-2" style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
+        <div className="flex items-center gap-2 rounded-2xl px-3 py-2.5" style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
           <IconSearch />
           <input placeholder="Rechercher..." className="bg-transparent text-sm outline-none flex-1" style={{ color: 'var(--text-1)' }} />
         </div>
       </div>
+
+      {!!conversations?.length && (
+        <div className="flex gap-3 px-4 pb-3 overflow-x-auto shrink-0">
+          {conversations.map((c) => {
+            const isPin = c.kind === 'announcement'
+            return (
+              <button key={c.id} onClick={() => { setActiveConvId(c.id); setMobileView('conv') }}
+                className="flex flex-col items-center gap-1.5 shrink-0 w-14">
+                <div style={{ outline: activeConvId === c.id ? '2px solid #F2C400' : 'none', outlineOffset: 2, borderRadius: '9999px' }}>
+                  <Avatar initials={initialsOf(c.title ?? 'CV')} size={48} yellow={isPin} />
+                </div>
+                <span className="text-[10px] truncate w-full text-center" style={{ color: 'var(--text-2)' }}>{convTitle(c).split(' ')[0]}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto">
         {!conversations?.length && (

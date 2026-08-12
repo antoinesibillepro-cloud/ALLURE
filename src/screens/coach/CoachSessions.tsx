@@ -20,6 +20,8 @@ export default function CoachSessions() {
   const [publishing, setPublishing] = useState(false)
   const [publishError, setPublishError] = useState<string | null>(null)
   const [publishedOk, setPublishedOk] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [generatedOk, setGeneratedOk] = useState(false)
 
   const { data: groups, loading: groupsLoading } = useQuery<GroupWithMembers[]>(
     () => (profile ? fetchGroups(profile.club_id) : Promise.resolve([])),
@@ -55,18 +57,52 @@ export default function CoachSessions() {
     }
   }
 
+  async function handleGenerateExamples() {
+    if (!profile || !effectiveGroupId) return
+    setGenerating(true)
+    setGeneratedOk(false)
+    try {
+      const examples: Array<{ title: string; description: string; duration_min: number; distance_km: number; vma_percent: number; dayOffset: number }> = [
+        { title: 'Endurance fondamentale', description: 'Footing facile, allure conversation.', duration_min: 45, distance_km: 8, vma_percent: 65, dayOffset: 0 },
+        { title: 'Fractionné VMA', description: '10×400m à 95% VMA, R=1\'30 trot.', duration_min: 50, distance_km: 10, vma_percent: 95, dayOffset: 2 },
+        { title: 'Seuil lactique', description: '3×2000m à 85% VMA, R=3\' trot.', duration_min: 55, distance_km: 11, vma_percent: 85, dayOffset: 4 },
+        { title: 'Sortie longue', description: 'Sortie longue à allure endurance, dernier tiers un peu plus soutenu.', duration_min: 75, distance_km: 15, vma_percent: 70, dayOffset: 6 },
+      ]
+      for (const ex of examples) {
+        const date = new Date()
+        date.setDate(date.getDate() + ex.dayOffset)
+        await createSession(profile.club_id, profile.id, {
+          title: ex.title, type: ex.title, description: ex.description,
+          duration_min: ex.duration_min, distance_km: ex.distance_km, vma_percent: ex.vma_percent,
+          scheduled_at: date.toISOString(), group_ids: [effectiveGroupId], status: 'published',
+        })
+      }
+      setGeneratedOk(true)
+      setTimeout(() => setGeneratedOk(false), 3000)
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-2xl mx-auto md:max-w-3xl">
-      <div className="flex items-center justify-between pt-1">
+      <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
         <h1 className="text-2xl font-black" style={{ color: 'var(--text-1)' }}>Séances</h1>
-        <div className="flex gap-1 p-1 rounded-[12px]" style={{ background: 'var(--card)', boxShadow: 'var(--card-shadow)' }}>
-          {(['create', 'library'] as const).map((t) => (
-            <button key={t} onClick={() => setTab(t)}
-              className="px-3 py-1.5 rounded-[10px] text-xs font-bold transition-all capitalize"
-              style={{ background: tab === t ? '#F2C400' : 'transparent', color: tab === t ? '#0E0E0D' : 'var(--text-2)' }}>
-              {t === 'create' ? 'Créer' : 'Bibliothèque'}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <button onClick={handleGenerateExamples} disabled={generating || !effectiveGroupId}
+            className="text-xs font-bold px-3 py-2 rounded-[12px] disabled:opacity-50"
+            style={{ background: generatedOk ? 'rgba(94,186,101,0.15)' : 'var(--surface2)', color: generatedOk ? '#5EBA65' : 'var(--text-1)' }}>
+            {generating ? 'Génération…' : generatedOk ? 'Séances générées' : 'Générer des séances d\'exemple'}
+          </button>
+          <div className="flex gap-1 p-1 rounded-[12px]" style={{ background: 'var(--card)', boxShadow: 'var(--card-shadow)' }}>
+            {(['create', 'library'] as const).map((t) => (
+              <button key={t} onClick={() => setTab(t)}
+                className="px-3 py-1.5 rounded-[10px] text-xs font-bold transition-all capitalize"
+                style={{ background: tab === t ? '#F2C400' : 'transparent', color: tab === t ? '#0E0E0D' : 'var(--text-2)' }}>
+                {t === 'create' ? 'Créer' : 'Bibliothèque'}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

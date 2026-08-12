@@ -66,7 +66,24 @@ export default function MessagingScreen() {
         </div>
       </div>
 
-      <div className="px-4 pt-4 pb-2" style={{ borderBottom: '1px solid var(--border)' }}>
+      {!!conversations?.length && (
+        <div className="flex gap-3 px-4 pt-4 pb-1 overflow-x-auto shrink-0">
+          {conversations.map((c) => {
+            const pinned = c.kind === 'announcement'
+            return (
+              <button key={c.id} onClick={() => { setActiveConvId(c.id); setMobileView('conv') }}
+                className="flex flex-col items-center gap-1.5 shrink-0 w-14">
+                <div style={{ outline: activeConvId === c.id ? '2px solid #F2C400' : 'none', outlineOffset: 2, borderRadius: '9999px' }}>
+                  <Avatar initials={initialsOf(c.title ?? 'CV')} size={48} yellow={pinned} />
+                </div>
+                <span className="text-[10px] truncate w-full text-center" style={{ color: 'var(--text-2)' }}>{convTitle(c).split(' ')[0]}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="px-4 pt-3 pb-2" style={{ borderBottom: '1px solid var(--border)' }}>
         <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>Conversations</p>
       </div>
       <div className="flex-1 overflow-y-auto">

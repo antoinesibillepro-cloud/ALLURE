@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext'
 import { useQuery } from '../lib/useQuery'
 import { fetchStravaStatus, connectStrava } from '../lib/queries/strava'
 import { supabase } from '../lib/supabase'
+import { notificationPermission, requestNotificationPermission } from '../lib/notifications'
 import {
   fetchClubName, fetchReferentCoach, fetchPersonalRecords, createPersonalRecord, deletePersonalRecord,
   fetchInjuries, createInjury, saveNotificationPrefs, type PersonalRecord, type Injury, type NotificationPrefs,
@@ -60,6 +61,12 @@ export default function ProfileScreen({ onBack, onOpenAdmin, onOpenRaces }: { on
   const [notifs, setNotifs] = useState<NotificationPrefs>(
     profile?.notification_prefs ?? { messages: true, sessions: true, reminders: false, competitions: true },
   )
+  const [notifPermission, setNotifPermission] = useState(notificationPermission())
+
+  async function handleEnableNotifications() {
+    const perm = await requestNotificationPermission()
+    setNotifPermission(perm)
+  }
 
   const { data: clubName } = useQuery(() => (profile ? fetchClubName(profile.club_id) : Promise.resolve('')), [profile?.club_id])
   const { data: referent } = useQuery(
@@ -346,6 +353,25 @@ export default function ProfileScreen({ onBack, onOpenAdmin, onOpenRaces }: { on
       {/* Notifications */}
       <Card>
         <SectionLabel>Notifications</SectionLabel>
+        <div className="flex items-center justify-between gap-4 mb-4 pb-4" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>Notifications du navigateur</p>
+            <p className="text-xs" style={{ color: 'var(--text-2)' }}>
+              {notifPermission === 'granted' ? 'Activées sur cet appareil' : notifPermission === 'denied' ? 'Bloquées — à réactiver dans les réglages du navigateur' : 'Reçois une alerte quand l\'appli est ouverte'}
+            </p>
+          </div>
+          {notifPermission === 'granted' ? (
+            <span className="text-xs font-bold px-3 py-1.5 rounded-full shrink-0" style={{ background: 'rgba(94,186,101,0.15)', color: '#5EBA65' }}>Activé</span>
+          ) : notifPermission === 'unsupported' ? (
+            <span className="text-xs shrink-0" style={{ color: 'var(--text-2)' }}>Non supporté</span>
+          ) : (
+            <button onClick={handleEnableNotifications} disabled={notifPermission === 'denied'}
+              className="text-xs font-bold px-3 py-1.5 rounded-full shrink-0 disabled:opacity-40"
+              style={{ background: '#F2C400', color: '#0E0E0D' }}>
+              Activer
+            </button>
+          )}
+        </div>
         <div className="space-y-4">
           {[
             { key: 'messages' as const, label: 'Messages', sub: 'Nouveaux messages de coach ou groupe' },

@@ -165,6 +165,7 @@ export default function HomeScreen() {
   const athleteName = profile?.name ?? ''
   const initials = athleteName.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
   const [selectedDay, setSelectedDay] = useState((new Date().getDay() + 6) % 7)
+  const [weekOffset, setWeekOffset] = useState(0)
   const [form, setForm] = useState<Record<FormKey, number>>({ sleep: 7.5, motivation: 8, fatigue: 4, soreness: 2, stress: 4 })
   const [formSent, setFormSent] = useState(false)
   const [showRecap, setShowRecap] = useState(false)
@@ -174,8 +175,10 @@ export default function HomeScreen() {
   const today = new Date()
   const todayIso = isoDate(today)
   const tomorrowIso = isoDate(new Date(today.getTime() + 24 * 3600 * 1000))
-  const weekStart = isoDate(startOfWeek(today))
-  const weekEnd = isoDate(new Date(startOfWeek(today).getTime() + 7 * 24 * 3600 * 1000))
+  const viewedWeekStart = new Date(startOfWeek(today))
+  viewedWeekStart.setDate(viewedWeekStart.getDate() + weekOffset * 7)
+  const weekStart = isoDate(viewedWeekStart)
+  const weekEnd = isoDate(new Date(viewedWeekStart.getTime() + 7 * 24 * 3600 * 1000))
 
   const { data: todaySessions, refetch: refetchToday } = useQuery<AthleteSession[]>(
     () => (profile ? fetchAthleteSessions(profile.id, todayIso, tomorrowIso) : Promise.resolve([])),
@@ -199,10 +202,12 @@ export default function HomeScreen() {
     else if (!dayStatusByDate.has(d)) dayStatusByDate.set(d, 'todo')
   }
   const weekDates = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(startOfWeek(today))
+    const d = new Date(viewedWeekStart)
     d.setDate(d.getDate() + i)
     return d
   })
+  const weekLabel = weekOffset === 0 ? "Cette semaine" : weekOffset === -1 ? "Semaine dernière" : weekOffset === 1 ? "Semaine prochaine"
+    : `${weekDates[0].toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} – ${weekDates[6].toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}`
   const weekKmByDay = weekDates.map((d) => {
     const iso = isoDate(d)
     return (weekSessions ?? [])
@@ -315,6 +320,17 @@ export default function HomeScreen() {
   // ── Desktop: 3-column grid ──────────────────────────────────────────────
   const dayStrip = (
     <Card className="!p-3">
+      <div className="flex items-center justify-between mb-2 px-0.5">
+        <button onClick={() => setWeekOffset((w) => w - 1)}
+          className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ background: 'var(--surface2)' }}>
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M7.5 9L4.5 6L7.5 3" stroke="var(--text-2)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </button>
+        <span className="text-xs font-semibold" style={{ color: 'var(--text-2)' }}>{weekLabel}</span>
+        <button onClick={() => setWeekOffset((w) => w + 1)}
+          className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ background: 'var(--surface2)' }}>
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M4.5 3L7.5 6L4.5 9" stroke="var(--text-2)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </button>
+      </div>
       <div className="flex gap-1.5 overflow-x-auto">
         {DAYS.map((d, i) => {
           const isSelected = i === selectedDay

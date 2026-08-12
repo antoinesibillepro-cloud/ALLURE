@@ -6,8 +6,9 @@ import { useQuery } from '../lib/useQuery'
 import { fetchAthleteSessions, validateSession, logFreeSession, type AthleteSession } from '../lib/queries/sessions'
 import { fetchStravaStatus, connectStrava, syncStrava, fetchStravaActivities, type StravaActivity } from '../lib/queries/strava'
 import { fetchCompetitions, createCompetition, toggleCompetitionDone, deleteCompetition, updateVma, type Competition } from '../lib/queries/profileExtras'
-import { fetchCrossTrainingLogs, createCrossTrainingLog, deleteCrossTrainingLog, type CrossTrainingLog, type Discipline } from '../lib/queries/crossTraining'
+import { fetchCrossTrainingLogs, createCrossTrainingLog, deleteCrossTrainingLog, fetchWeeklyDisciplineKm, type CrossTrainingLog, type Discipline } from '../lib/queries/crossTraining'
 import { fetchAthleteRaces, type ClubRace, type RaceAssignment } from '../lib/queries/clubRaces'
+import { AreaTrendChart } from '../components/charts'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function paceStr(kmh: number): string {
@@ -82,6 +83,10 @@ export default function TrainingScreen() {
 
   const { data: crossLogs, refetch: refetchCrossLogs } = useQuery<CrossTrainingLog[]>(
     () => (profile ? fetchCrossTrainingLogs(profile.id, crossTab) : Promise.resolve([])),
+    [profile?.id, crossTab],
+  )
+  const { data: crossTrend } = useQuery<{ label: string; km: number }[]>(
+    () => (profile && crossTab !== 'gainage' ? fetchWeeklyDisciplineKm(profile.id, crossTab) : Promise.resolve([])),
     [profile?.id, crossTab],
   )
   const { data: muscLogs, refetch: refetchMuscLogs } = useQuery<CrossTrainingLog[]>(
@@ -588,6 +593,32 @@ export default function TrainingScreen() {
               </button>
             ))}
           </div>
+
+          {!!crossLogs?.length && (
+            <div className="flex items-center gap-6 mb-4 pb-4" style={{ borderBottom: '1px solid var(--border)' }}>
+              <div>
+                <p className="text-2xl font-black leading-none" style={{ color: 'var(--text-1)' }}>{crossLogs.length}</p>
+                <p className="text-[10px] uppercase tracking-wide font-bold mt-1" style={{ color: 'var(--text-2)' }}>séances</p>
+              </div>
+              {crossTab !== 'gainage' && (
+                <div>
+                  <p className="text-2xl font-black leading-none" style={{ color: 'var(--text-1)' }}>{crossLogs.reduce((s, l) => s + (l.distance_km ?? 0), 0).toFixed(1)}<span className="text-sm font-semibold ml-1" style={{ color: 'var(--text-2)' }}>km</span></p>
+                  <p className="text-[10px] uppercase tracking-wide font-bold mt-1" style={{ color: 'var(--text-2)' }}>cumulés</p>
+                </div>
+              )}
+              <div>
+                <p className="text-2xl font-black leading-none" style={{ color: 'var(--text-1)' }}>{crossLogs.reduce((s, l) => s + l.duration_min, 0)}<span className="text-sm font-semibold ml-1" style={{ color: 'var(--text-2)' }}>min</span></p>
+                <p className="text-[10px] uppercase tracking-wide font-bold mt-1" style={{ color: 'var(--text-2)' }}>temps total</p>
+              </div>
+            </div>
+          )}
+
+          {crossTab !== 'gainage' && !!crossTrend?.some((t) => t.km > 0) && (
+            <div className="mb-4">
+              <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--text-2)' }}>Km par semaine · 8 dernières semaines</p>
+              <AreaTrendChart data={crossTrend.map((t) => ({ label: t.label, value: t.km }))} color={crossTab === 'velo' ? '#5B91D8' : '#7B6FD6'} unit="km" />
+            </div>
+          )}
 
           {showAddCross && (
             <div className="mb-4 p-3 rounded-xl space-y-2" style={{ background: 'var(--surface2)' }}>

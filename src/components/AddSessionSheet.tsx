@@ -50,6 +50,25 @@ export interface SessionData {
   notes: string
 }
 
+function paceLabel(sport: Sport, distance: string, duration: number): string | null {
+  const d = parseFloat(distance.replace(',', '.'))
+  if (!d || d <= 0 || !duration) return null
+  if (sport === 'velo') {
+    const kmh = d / (duration / 60)
+    return `${kmh.toFixed(1)} km/h`
+  }
+  if (sport === 'natation') {
+    const secPer100 = (duration * 60) / (d / 100)
+    const m = Math.floor(secPer100 / 60)
+    const s = Math.round(secPer100 % 60)
+    return `${m}'${s.toString().padStart(2, '0')}" / 100m`
+  }
+  const secPerKm = (duration * 60) / d
+  const m = Math.floor(secPerKm / 60)
+  const s = Math.round(secPerKm % 60)
+  return `${m}'${s.toString().padStart(2, '0')}" / km`
+}
+
 function RPELabel(rpe: number): string {
   if (rpe <= 2) return 'Très facile'
   if (rpe <= 4) return 'Facile'
@@ -97,6 +116,7 @@ export default function AddSessionSheet({ date, onClose, onSave }: Props) {
 
   const showDistance = sport !== 'muscu' && sport !== 'autre'
   const sportInfo = SPORTS.find(s => s.id === sport)!
+  const pace = showDistance ? paceLabel(sport, distance, duration) : null
 
   return createPortal(
     <>
@@ -180,10 +200,17 @@ export default function AddSessionSheet({ date, onClose, onSave }: Props) {
                   style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>+</button>
               </div>
 
-              {/* Distance */}
+              {/* Distance + Allure */}
               {showDistance && (
                 <>
-                  <p className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-2)' }}>Distance (optionnel)</p>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>Distance (optionnel)</p>
+                    {pace && (
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: `${sportInfo.color}22`, color: sportInfo.color }}>
+                        Allure {pace}
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-3 mb-5">
                     <input value={distance} onChange={e => setDistance(e.target.value)}
                       placeholder="0,0" inputMode="decimal"
