@@ -267,7 +267,9 @@ export default function App() {
   function renderContent() {
     if (showProfile) return <ProfileScreen onBack={() => setShowProfile(false)}
       onOpenAdmin={isCoach ? () => { setCScreen('admin'); setShowProfile(false) } : undefined}
-      onOpenRaces={isCoach ? () => { setCScreen('races'); setShowProfile(false) } : undefined} />
+      onOpenRaces={isCoach ? () => { setCScreen('races'); setShowProfile(false) } : undefined}
+      onOpenGroups={isCoach ? () => { setCScreen('groups'); setShowProfile(false) } : undefined}
+      onOpenCommunity={isCoach ? () => { setCScreen('community'); setShowProfile(false) } : undefined} />
     if (isCoach) {
       switch (cScreen) {
         case 'dashboard': return <CoachDashboard />
@@ -298,6 +300,10 @@ export default function App() {
   }
 
   const navItems = isCoach ? COACH_NAV : ATHLETE_NAV
+  const COACH_MOBILE_IDS: CScreen[] = ['dashboard', 'athletes', 'sessions', 'messaging', 'races']
+  const mobileNavItems = isCoach
+    ? COACH_NAV.filter((i) => COACH_MOBILE_IDS.includes(i.id))
+    : ATHLETE_NAV.slice(0, 5)
   const activeId = showProfile ? '' : isCoach ? cScreen : aScreen
 
   const contentKey = showProfile ? 'profile' : activeId
@@ -403,7 +409,7 @@ export default function App() {
       <div className="lg:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 transition-all duration-200"
         style={keyboardOpen ? { opacity: 0, transform: 'translate(-50%, 24px)', pointerEvents: 'none' } : undefined}>
         <nav className="glass-capsule rounded-[30px] px-1.5 py-2 flex items-center gap-0">
-          {navItems.slice(0, 5).map((item) => {
+          {mobileNavItems.map((item) => {
             const active = item.id === activeId
             return (
               <button key={item.id} onClick={() => handleNav(item.id)}

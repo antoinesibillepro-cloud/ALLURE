@@ -4,7 +4,7 @@ import { Avatar, IconSearch } from '../../components/ui'
 import { useApp } from '../../context/AppContext'
 import { useQuery } from '../../lib/useQuery'
 import {
-  fetchConversations, fetchMessages, sendMessage, subscribeToConversation,
+  fetchConversations, fetchMessages, sendMessage, subscribeToConversation, leaveConversation,
   createAnnouncement, createGroupConversation, fetchOrCreateDm, type ConversationSummary,
 } from '../../lib/queries/messages'
 import { fetchGroups, fetchClubAthletes, type GroupWithMembers } from '../../lib/queries/groups'
@@ -24,6 +24,8 @@ export default function CoachMessaging() {
   const [broadcastText, setBroadcastText] = useState('')
   const [broadcastKind, setBroadcastKind] = useState<'group' | 'announcement'>('announcement')
   const [broadcasting, setBroadcasting] = useState(false)
+  const [menuForId, setMenuForId] = useState<string | null>(null)
+  const [leavingId, setLeavingId] = useState<string | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
 
   const { data: conversations, refetch: refetchConvs } = useQuery<ConversationSummary[]>(
@@ -119,6 +121,20 @@ export default function CoachMessaging() {
     return c.title || 'Conversation'
   }
 
+  async function handleLeave(convId: string) {
+    if (!profile) return
+    if (!confirm('Supprimer cette conversation ? Elle disparaîtra de ta liste.')) return
+    setLeavingId(convId)
+    try {
+      await leaveConversation(convId, profile.id)
+      setMenuForId(null)
+      if (activeConvId === convId) { setActiveConvId(null); setMobileView('list') }
+      await refetchConvs()
+    } finally {
+      setLeavingId(null)
+    }
+  }
+
   const convList = (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="p-4 pb-2 shrink-0">
@@ -178,18 +194,36 @@ export default function CoachMessaging() {
           const active = activeConvId === c.id
           const isPin = c.kind === 'announcement'
           return (
-            <button key={c.id} onClick={() => { setActiveConvId(c.id); setMobileView('conv') }}
-              className="w-full flex items-center gap-3 px-4 py-3 transition-colors text-left"
+            <div key={c.id} className="relative flex items-center gap-3 px-4 py-3 transition-colors"
               style={{
                 background: active ? (isPin ? 'rgba(242,196,0,0.08)' : 'var(--surface2)') : isPin ? 'rgba(242,196,0,0.03)' : 'transparent',
                 borderBottom: '1px solid var(--border)',
               }}>
-              <Avatar initials={initialsOf(c.title ?? 'CV')} size={42} yellow={isPin} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold truncate" style={{ color: isPin ? '#F2C400' : 'var(--text-1)' }}>{convTitle(c)}</p>
-                <p className="text-xs truncate mt-0.5" style={{ color: 'var(--text-2)' }}>{c.last_message ?? 'Aucun message'}</p>
-              </div>
-            </button>
+              <button onClick={() => { setActiveConvId(c.id); setMobileView('conv') }} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                <Avatar initials={initialsOf(c.title ?? 'CV')} size={42} yellow={isPin} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate" style={{ color: isPin ? '#F2C400' : 'var(--text-1)' }}>{convTitle(c)}</p>
+                  <p className="text-xs truncate mt-0.5" style={{ color: 'var(--text-2)' }}>{c.last_message ?? 'Aucun message'}</p>
+                </div>
+              </button>
+              {!isPin && (
+                <div className="relative shrink-0">
+                  <button onClick={() => setMenuForId(menuForId === c.id ? null : c.id)}
+                    className="w-7 h-7 rounded-full flex items-center justify-center" style={{ color: 'var(--text-2)' }}>
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="3" cy="7" r="1.3" /><circle cx="7" cy="7" r="1.3" /><circle cx="11" cy="7" r="1.3" /></svg>
+                  </button>
+                  {menuForId === c.id && (
+                    <div className="absolute right-0 top-full mt-1 z-20 rounded-xl overflow-hidden"
+                      style={{ background: 'var(--card)', boxShadow: 'var(--card-shadow)', border: '1px solid var(--border)', minWidth: 140 }}>
+                      <button onClick={() => handleLeave(c.id)} disabled={leavingId === c.id}
+                        className="w-full text-left px-3.5 py-2.5 text-xs font-semibold disabled:opacity-50" style={{ color: '#E4574A' }}>
+                        {leavingId === c.id ? 'Suppression…' : 'Supprimer la conversation'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )
         })}
 
@@ -232,11 +266,19 @@ export default function CoachMessaging() {
               <p className="font-semibold text-sm truncate" style={{ color: 'var(--text-1)' }}>{convTitle(activeConv)}</p>
               {isAnnouncement && <p className="text-xs" style={{ color: 'var(--text-2)' }}>Visible par tous les athlètes du club</p>}
             </div>
+            {!isAnnouncement && (
+              <button onClick={() => handleLeave(activeConv.id)} disabled={leavingId === activeConv.id}
+                className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 disabled:opacity-50" style={{ color: 'var(--text-2)' }}>
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 5H13M6 5V3.5C6 3 6.3 2.5 7 2.5H9C9.7 2.5 10 3 10 3.5V5M11.5 5V12.5C11.5 13 11 13.5 10.5 13.5H5.5C5 13.5 4.5 13 4.5 12.5V5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            )}
           </>
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2.5" style={{ background: 'var(--bg)' }}>
         {!activeConv ? (
           <div className="flex items-center justify-center h-32 text-sm" style={{ color: 'var(--text-2)' }}>Sélectionne une conversation</div>
         ) : !messages?.length ? (
@@ -247,20 +289,24 @@ export default function CoachMessaging() {
             <p className="text-sm" style={{ color: 'var(--text-2)' }}>Aucun message pour le moment</p>
           </div>
         ) : (
-          messages.map((msg) => {
+          messages.map((msg, i) => {
             const isMe = msg.sender_id === profile?.id
             const sender = msg.sender as { name?: string; avatar_url?: string | null } | null
             const senderName = sender?.name ?? ''
+            const prev = messages[i - 1]
+            const sameSenderAsPrev = prev && prev.sender_id === msg.sender_id
             return (
-              <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'items-end gap-2'}`}>
-                {!isMe && <Avatar initials={initialsOf(senderName)} size={28} src={sender?.avatar_url ?? null} />}
+              <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'items-end gap-2'}`}
+                style={{ marginTop: sameSenderAsPrev ? 2 : 10, animation: 'msgIn 0.22s cubic-bezier(0.16,1,0.3,1)' }}>
+                {!isMe && (sameSenderAsPrev ? <div className="w-7 shrink-0" /> : <Avatar initials={initialsOf(senderName)} size={28} src={sender?.avatar_url ?? null} />)}
                 <div className="max-w-[78%]">
-                  {!isMe && <p className="text-[10px] font-bold mb-1 ml-1" style={{ color: 'var(--text-2)' }}>{senderName}</p>}
-                  <div className="rounded-2xl px-4 py-3"
+                  {!isMe && !sameSenderAsPrev && <p className="text-[10px] font-bold mb-1 ml-1" style={{ color: 'var(--text-2)' }}>{senderName}</p>}
+                  <div className="px-4 py-2.5"
                     style={{
                       background: isMe ? '#F2C400' : 'var(--surface3)',
                       color: isMe ? '#0E0E0D' : 'var(--text-1)',
-                      borderRadius: isMe ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                      borderRadius: isMe ? '18px 18px 5px 18px' : '18px 18px 18px 5px',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
                     }}>
                     <p className="text-sm leading-relaxed">{msg.body}</p>
                   </div>
@@ -276,14 +322,14 @@ export default function CoachMessaging() {
       </div>
 
       {activeConv && (
-        <div className="p-3 shrink-0" style={{ borderTop: '1px solid var(--border)' }}>
-          <div className="flex items-center gap-2 rounded-2xl px-3 py-2" style={{ background: 'var(--surface2)' }}>
+        <div className="p-3 shrink-0" style={{ borderTop: '1px solid var(--border)', background: 'var(--card)' }}>
+          <div className="flex items-center gap-2 rounded-full px-3 py-2" style={{ background: 'var(--surface2)' }}>
             <input value={input} onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
               placeholder="Message…" className="flex-1 bg-transparent text-sm outline-none py-1" style={{ color: 'var(--text-1)' }} />
             <button onClick={handleSend} disabled={sending || !input.trim()}
-              className="w-8 h-8 rounded-[12px] flex items-center justify-center shrink-0 transition-colors disabled:opacity-50"
-              style={{ background: input.trim() ? '#F2C400' : 'var(--surface3)', color: input.trim() ? '#0E0E0D' : 'var(--text-2)' }}>
+              className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all disabled:opacity-50"
+              style={{ background: input.trim() ? '#F2C400' : 'var(--surface3)', color: input.trim() ? '#0E0E0D' : 'var(--text-2)', transform: input.trim() ? 'scale(1)' : 'scale(0.92)' }}>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                 <path d="M12.5 7L1.5 1.5L4 7L1.5 12.5L12.5 7Z" fill="currentColor" />
               </svg>
@@ -363,7 +409,8 @@ export default function CoachMessaging() {
         document.body,
       )}
 
-      <div className="md:hidden" style={{ height: 'calc(100dvh - 7rem)' }}>
+      <style>{`@keyframes msgIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+      <div className="md:hidden fixed inset-0 z-40 flex flex-col" style={{ background: 'var(--bg)', paddingBottom: '5.5rem' }}>
         {mobileView === 'list' ? convList : convView}
       </div>
       <div className="hidden md:flex" style={{ height: 'calc(100vh - 3.5rem)' }}>

@@ -224,9 +224,12 @@ function RankingsTab({ rankings, profileId }: { rankings: WeeklyRankings | null 
                     style={{ background: l.profileId === profileId ? 'rgba(242,196,0,0.08)' : 'transparent' }}>
                     <RankBadge rank={i} />
                     <Avatar initials={l.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()} size={28} />
-                    <span className="text-sm flex-1 truncate" style={{ color: l.profileId === profileId ? '#F2C400' : 'var(--text-1)', fontWeight: l.profileId === profileId ? 700 : 500 }}>
-                      {l.name}{l.profileId === profileId ? ' (Toi)' : ''}
-                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm truncate" style={{ color: l.profileId === profileId ? '#F2C400' : 'var(--text-1)', fontWeight: l.profileId === profileId ? 700 : 500 }}>
+                        {l.name}{l.profileId === profileId ? ' (Toi)' : ''}
+                      </p>
+                      {l.category && <p className="text-[11px] truncate" style={{ color: 'var(--text-2)' }}>{l.category}</p>}
+                    </div>
                     <span className="text-sm font-black" style={{ color: 'var(--text-1)' }}>{l.value}<span className="text-xs font-semibold ml-0.5" style={{ color: 'var(--text-2)' }}>{RANKING_UNIT[key]}</span></span>
                   </div>
                 ))}

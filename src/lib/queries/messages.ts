@@ -110,6 +110,12 @@ export async function createGroupConversation(clubId: string, coachId: string, g
   return { id }
 }
 
+/** Removes the current user from a conversation (DM/group). It disappears from their list; other participants are unaffected. */
+export async function leaveConversation(conversationId: string, profileId: string) {
+  const { error } = await supabase.from('conversation_participants').delete().eq('conversation_id', conversationId).eq('profile_id', profileId)
+  if (error) throw error
+}
+
 export function subscribeToConversation(conversationId: string, onInsert: () => void) {
   const channel = supabase
     .channel(`messages:${conversationId}`)

@@ -68,7 +68,7 @@ export async function ensureWeeklyClubChallenge(clubId: string, coachId: string)
   if (error) throw error
 }
 
-export interface RankingEntry { profileId: string; name: string; value: number }
+export interface RankingEntry { profileId: string; name: string; value: number; category: string | null }
 export interface WeeklyRankings { km: RankingEntry[]; assiduite: RankingEntry[]; recuperation: RankingEntry[] }
 
 /** Standing club-wide rankings for the current week: km, assiduité (%), récupération (forme moyenne %). */
@@ -101,6 +101,13 @@ export async function fetchWeeklyRankings(clubId: string): Promise<WeeklyRanking
   for (const m of memberships ?? []) groupsByProfile.set(m.profile_id, [...(groupsByProfile.get(m.profile_id) ?? []), m.group_id])
 
   const allGroupIds = [...new Set((memberships ?? []).map((m) => m.group_id))]
+  const { data: groupRows } = allGroupIds.length
+    ? await supabase.from('groups').select('id, name').in('id', allGroupIds)
+    : { data: [] }
+  const groupNameById = new Map((groupRows ?? []).map((g) => [g.id, g.name]))
+  const categoryByProfile = new Map<string, string | null>()
+  for (const [pid, gids] of groupsByProfile.entries()) categoryByProfile.set(pid, groupNameById.get(gids[0]) ?? null)
+
   const { data: assignments } = allGroupIds.length
     ? await supabase.from('session_assignments').select('session_id, group_id').in('group_id', allGroupIds)
     : { data: [] }
@@ -134,7 +141,7 @@ export async function fetchWeeklyRankings(clubId: string): Promise<WeeklyRanking
     const done = doneSessionsByProfile.get(id) ?? new Set<string>()
     const doneCount = [...done].filter((sid) => assignedSessionIds.has(sid)).length
     const value = assignedSessionIds.size > 0 ? Math.round((doneCount / assignedSessionIds.size) * 100) : 0
-    return { profileId: id, name: nameById.get(id) ?? '', value }
+    return { profileId: id, name: nameById.get(id) ?? '', value, category: categoryByProfile.get(id) ?? null }
   }).sort((a, b) => b.value - a.value)
 
   // Récupération: average composite forme score over the last 7 days
@@ -158,10 +165,10 @@ export async function fetchWeeklyRankings(clubId: string): Promise<WeeklyRanking
   }
   const recuperation: RankingEntry[] = profileIds
     .filter((id) => pctSums.has(id))
-    .map((id) => ({ profileId: id, name: nameById.get(id) ?? '', value: Math.round((pctSums.get(id)!.sum / pctSums.get(id)!.count)) }))
+    .map((id) => ({ profileId: id, name: nameById.get(id) ?? '', value: Math.round((pctSums.get(id)!.sum / pctSums.get(id)!.count)), category: categoryByProfile.get(id) ?? null }))
     .sort((a, b) => b.value - a.value)
 
-  const km: RankingEntry[] = profileIds.map((id) => ({ profileId: id, name: nameById.get(id) ?? '', value: +((kmByProfile.get(id) ?? 0).toFixed(1)) }))
+  const km: RankingEntry[] = profileIds.map((id) => ({ profileId: id, name: nameById.get(id) ?? '', value: +((kmByProfile.get(id) ?? 0).toFixed(1)), category: categoryByProfile.get(id) ?? null }))
     .sort((a, b) => b.value - a.value)
 
   return { km, assiduite, recuperation }
