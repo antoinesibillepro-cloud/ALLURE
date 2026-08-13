@@ -88,7 +88,7 @@ export async function createPersonalRecord(profileId: string, discipline: string
   if (error) throw error
 }
 
-export async function updatePersonalRecord(id: string, fields: Partial<Pick<PersonalRecord, 'discipline' | 'value' | 'is_season_best'>>) {
+export async function updatePersonalRecord(id: string, fields: Partial<Pick<PersonalRecord, 'discipline' | 'value' | 'is_season_best' | 'date'>>) {
   const { error } = await supabase.from('personal_records').update(fields).eq('id', id)
   if (error) throw error
 }

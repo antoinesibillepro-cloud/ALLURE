@@ -387,13 +387,13 @@ export default function StatsScreen() {
               <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Aucun record enregistré.</p>
             ) : (
               <>
-                <div className="grid grid-cols-[1fr_80px_44px] px-0 mb-2 text-[10px] font-bold uppercase tracking-wider"
+                <div className="grid grid-cols-[1fr_80px_110px_44px] px-0 mb-2 text-[10px] font-bold uppercase tracking-wider"
                   style={{ color: 'var(--text-2)' }}>
-                  <span>Distance</span><span className="text-right">Record</span><span className="text-center">SB</span>
+                  <span>Distance</span><span className="text-right">Record</span><span className="text-right">Date</span><span className="text-center">SB</span>
                 </div>
                 <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
                   {records.map((r) => (
-                    <div key={r.id} className="grid grid-cols-[1fr_80px_44px] items-center px-4 py-3 border-b last:border-b-0"
+                    <div key={r.id} className="grid grid-cols-[1fr_80px_110px_44px] items-center px-4 py-3 border-b last:border-b-0"
                       style={{ borderColor: 'var(--border)' }}>
                       <input defaultValue={r.discipline}
                         onBlur={(e) => e.target.value !== r.discipline && updatePersonalRecord(r.id, { discipline: e.target.value }).then(refetchRecords)}
@@ -403,6 +403,10 @@ export default function StatsScreen() {
                         onBlur={(e) => e.target.value !== r.value && updatePersonalRecord(r.id, { value: e.target.value }).then(refetchRecords)}
                         className="text-sm font-bold text-right bg-transparent outline-none w-full"
                         style={{ color: 'var(--text-1)' }} />
+                      <input type="date" defaultValue={r.date}
+                        onBlur={(e) => e.target.value !== r.date && updatePersonalRecord(r.id, { date: e.target.value }).then(refetchRecords)}
+                        className="text-xs text-right bg-transparent outline-none w-full"
+                        style={{ color: 'var(--text-2)', colorScheme: 'dark' }} />
                       <div className="flex justify-center gap-1">
                         <button onClick={() => updatePersonalRecord(r.id, { is_season_best: !r.is_season_best }).then(refetchRecords)}
                           className="w-6 h-6 rounded-md flex items-center justify-center transition-all"

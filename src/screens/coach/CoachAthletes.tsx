@@ -4,7 +4,10 @@ import { useApp } from '../../context/AppContext'
 import { useQuery } from '../../lib/useQuery'
 import { fetchGroups, type GroupWithMembers } from '../../lib/queries/groups'
 import { fetchLatestWellnessScores, fetchWellnessAverages, fetchAthleteTotalKm, fetchLastActivity, fetchAthleteWeekStats, type WellnessScore } from '../../lib/queries/stats'
-import { fetchPersonalRecords, fetchInjuries, type PersonalRecord, type Injury } from '../../lib/queries/profileExtras'
+import {
+  fetchPersonalRecords, fetchInjuries, createPersonalRecord, updatePersonalRecord, deletePersonalRecord,
+  type PersonalRecord, type Injury,
+} from '../../lib/queries/profileExtras'
 import { fetchDisciplineBreakdown, type DisciplineBreakdown } from '../../lib/queries/crossTraining'
 import { DonutChart } from '../../components/charts'
 
@@ -24,7 +27,17 @@ function AthleteDetail({ profileId, name }: { profileId: string; name: string })
   const { data: totalKm } = useQuery(() => fetchAthleteTotalKm(profileId), [profileId])
   const { data: lastActivity } = useQuery(() => fetchLastActivity(profileId), [profileId])
   const { data: weekStats } = useQuery(() => fetchAthleteWeekStats(profileId, weekStart.toISOString().slice(0, 10), weekEnd.toISOString().slice(0, 10)), [profileId])
-  const { data: records } = useQuery<PersonalRecord[]>(() => fetchPersonalRecords(profileId), [profileId])
+  const { data: records, refetch: refetchRecords } = useQuery<PersonalRecord[]>(() => fetchPersonalRecords(profileId), [profileId])
+  const [newDiscipline, setNewDiscipline] = useState('')
+  const [newValue, setNewValue] = useState('')
+  const [newDate, setNewDate] = useState(() => new Date().toISOString().slice(0, 10))
+
+  async function handleAddRecord() {
+    if (!newDiscipline.trim() || !newValue.trim()) return
+    await createPersonalRecord(profileId, newDiscipline.trim(), newValue.trim(), newDate)
+    setNewDiscipline(''); setNewValue('')
+    refetchRecords()
+  }
   const { data: injuries } = useQuery<Injury[]>(() => fetchInjuries(profileId), [profileId])
   const { data: breakdown } = useQuery<DisciplineBreakdown[]>(() => fetchDisciplineBreakdown(profileId, monthAgo, now.toISOString()), [profileId])
 
@@ -91,18 +104,49 @@ function AthleteDetail({ profileId, name }: { profileId: string; name: string })
 
       <Card>
         <SectionLabel>Records personnels</SectionLabel>
-        {!records?.length ? (
-          <p className="text-sm py-3" style={{ color: 'var(--text-2)' }}>Aucun record enregistré.</p>
-        ) : (
+        <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-2)' }}>
+          Saisis ici les chronos relevés sur la fiche Base Athlé FFA de l'athlète.
+        </p>
+        {!!records?.length && (
           <div className="space-y-1.5 mt-2">
             {records.map((r) => (
-              <div key={r.id} className="flex items-center justify-between py-1.5 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
-                <span className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>{r.discipline}</span>
-                <span className="text-sm font-bold" style={{ color: r.is_season_best ? '#F2C400' : 'var(--text-1)' }}>{r.value}</span>
+              <div key={r.id} className="flex items-center gap-2 py-1.5 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
+                <input defaultValue={r.discipline}
+                  onBlur={(e) => e.target.value !== r.discipline && updatePersonalRecord(r.id, { discipline: e.target.value }).then(refetchRecords)}
+                  className="flex-1 min-w-0 text-sm font-semibold bg-transparent outline-none"
+                  style={{ color: 'var(--text-1)' }} />
+                <input defaultValue={r.value}
+                  onBlur={(e) => e.target.value !== r.value && updatePersonalRecord(r.id, { value: e.target.value }).then(refetchRecords)}
+                  className="w-20 text-sm font-bold text-right bg-transparent outline-none"
+                  style={{ color: r.is_season_best ? '#F2C400' : 'var(--text-1)' }} />
+                <input type="date" defaultValue={r.date}
+                  onBlur={(e) => e.target.value !== r.date && updatePersonalRecord(r.id, { date: e.target.value }).then(refetchRecords)}
+                  className="w-[110px] text-xs text-right bg-transparent outline-none shrink-0"
+                  style={{ color: 'var(--text-2)', colorScheme: 'dark' }} />
+                <button onClick={() => deletePersonalRecord(r.id).then(refetchRecords)}
+                  className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ color: 'var(--text-2)' }}>
+                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                    <path d="M1 1L11 11M11 1L1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
+                </button>
               </div>
             ))}
           </div>
         )}
+        <div className="mt-3 flex items-center gap-2">
+          <input value={newDiscipline} onChange={(e) => setNewDiscipline(e.target.value)} placeholder="Discipline (ex: 100m)"
+            className="flex-1 min-w-0 px-3 py-2 rounded-xl text-sm outline-none"
+            style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
+          <input value={newValue} onChange={(e) => setNewValue(e.target.value)} placeholder="Chrono"
+            className="w-20 px-3 py-2 rounded-xl text-sm outline-none"
+            style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
+          <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)}
+            className="w-[110px] px-2 py-2 rounded-xl text-xs outline-none shrink-0"
+            style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)', colorScheme: 'dark' }} />
+          <button onClick={handleAddRecord} disabled={!newDiscipline.trim() || !newValue.trim()}
+            className="text-sm font-bold px-4 py-2 rounded-xl transition-all active:scale-95 disabled:opacity-50"
+            style={{ background: '#F2C400', color: '#0E0E0D' }}>+</button>
+        </div>
       </Card>
 
       <Card>
