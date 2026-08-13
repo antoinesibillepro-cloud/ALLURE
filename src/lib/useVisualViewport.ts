@@ -3,17 +3,20 @@ import { useEffect, useState } from 'react'
 /**
  * iOS Safari keeps `position: fixed` pinned to the *layout* viewport, not the
  * visual one. When the keyboard opens it doesn't shrink the layout viewport —
- * instead it pans the page to keep the focused input visible, which drags a
- * `fixed inset-0` panel along with it and can push its content fully
- * off-screen (a blank/black screen with only the keyboard visible).
+ * instead it pans the visual viewport down to keep the focused input visible
+ * (`visualViewport.offsetTop` grows), which is a real scroll `overflow:
+ * hidden` on body cannot prevent. A fixed panel still anchored at `top: 0` of
+ * the layout viewport then sits above the now-panned visible area — it
+ * looks like the whole thing scrolled off-screen.
  *
- * Binding a panel's height to `window.visualViewport.height` keeps it sized
- * to exactly the area still visible above the keyboard, so its header and
- * input bar stay put and only the scrollable middle shrinks.
+ * Binding both the panel's `top` to `visualViewport.offsetTop` and its
+ * `height` to `visualViewport.height` keeps it pinned exactly to the
+ * currently-visible rectangle, however iOS decides to pan things around.
  */
 export function useVisualViewport() {
-  const [state, setState] = useState<{ height: number; keyboardOpen: boolean }>(() => ({
+  const [state, setState] = useState<{ height: number; top: number; keyboardOpen: boolean }>(() => ({
     height: typeof window !== 'undefined' ? window.innerHeight : 0,
+    top: 0,
     keyboardOpen: false,
   }))
 
@@ -22,8 +25,7 @@ export function useVisualViewport() {
     if (!vv) return
     const fullHeight = window.innerHeight
     function update() {
-      const h = vv!.height
-      setState({ height: h, keyboardOpen: h < fullHeight - 120 })
+      setState({ height: vv!.height, top: vv!.offsetTop, keyboardOpen: vv!.height < fullHeight - 120 })
     }
     update()
     vv.addEventListener('resize', update)
