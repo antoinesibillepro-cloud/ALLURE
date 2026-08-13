@@ -5,7 +5,7 @@ import { useApp } from '../../context/AppContext'
 import { useQuery } from '../../lib/useQuery'
 import {
   fetchConversations, fetchMessages, sendMessage, subscribeToConversation, leaveConversation,
-  createAnnouncement, createGroupConversation, fetchOrCreateDm, type ConversationSummary,
+  createAnnouncement, createGroupConversation, fetchOrCreateDm, markConversationRead, type ConversationSummary,
 } from '../../lib/queries/messages'
 import { fetchGroups, fetchClubAthletes, type GroupWithMembers } from '../../lib/queries/groups'
 
@@ -65,6 +65,12 @@ export default function CoachMessaging() {
   )
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+
+  // Stamp the conversation read once its messages are on screen.
+  useEffect(() => {
+    if (!activeConvId || !profile || !messages?.length) return
+    markConversationRead(activeConvId, profile.id).catch(() => {})
+  }, [activeConvId, profile?.id, messages?.length])
 
   useEffect(() => {
     const prevOverflow = document.body.style.overflow

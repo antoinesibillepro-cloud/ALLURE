@@ -278,3 +278,63 @@ input[type="range"]::-webkit-slider-runnable-track {
 .slide-up { animation: slideUp 0.4s var(--ease-out) both; }
 
 select { -webkit-appearance: none; appearance: none; }
+
+/* ── Toast ── */
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(-14px) scale(0.94); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.toast-in {
+  animation: toastIn 0.34s var(--ease-spring) both;
+  pointer-events: auto;
+}
+
+/* ── Skeleton shimmer ── */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface2) 25%,
+    var(--surface3) 37%,
+    var(--surface2) 63%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+/* ── Dropdown / popover panel ── */
+@keyframes popIn {
+  from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.pop-in { animation: popIn 0.2s var(--ease-out) both; }
+
+/* ── Staggered list rows ── */
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.row-in { animation: rowIn 0.32s var(--ease-out) both; }
+
+/* ── Interactive row press ── */
+.row-press {
+  transition: background 0.18s var(--ease-out), transform 0.12s var(--ease-inout);
+}
+.row-press:hover { background: var(--surface2); }
+.row-press:active { transform: scale(0.99); }
+
+/* ── Focus ring on inputs ── */
+input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(242, 196, 0, 0.35);
+  border-radius: 10px;
+}
+
+/* ── Respect reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

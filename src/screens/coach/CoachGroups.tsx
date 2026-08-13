@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Card, SectionLabel, BtnPrimary, Avatar } from '../../components/ui'
 import { useApp } from '../../context/AppContext'
+import { useToast } from '../../components/Toast'
 import { useQuery } from '../../lib/useQuery'
 import {
   fetchGroups, createGroup, addAthleteToGroup, removeAthleteFromGroup, moveAthleteToGroup,
@@ -24,6 +25,7 @@ function FormeBadge({ score }: { score: WellnessScore | undefined }) {
 
 export default function CoachGroups() {
   const { profile } = useApp()
+  const toast = useToast()
   const { data: groups, loading, refetch } = useQuery<GroupWithMembers[]>(
     () => (profile ? fetchGroups(profile.club_id) : Promise.resolve([])),
     [profile?.club_id],
@@ -68,6 +70,9 @@ export default function CoachGroups() {
       setNewGroupName(''); setNewGroupLevel(''); setShowCreate(false)
       await refetch()
       setActiveGroupId(g.id)
+      toast(`Groupe ${g.name} créé`)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Création impossible', 'error')
     } finally {
       setBusy(false)
     }
@@ -77,9 +82,13 @@ export default function CoachGroups() {
     if (!profile || !group || !newSubgroupName.trim()) return
     setBusy(true)
     try {
-      await createGroup(profile.club_id, profile.id, newSubgroupName.trim(), null, group.id)
+      const label = newSubgroupName.trim()
+      await createGroup(profile.club_id, profile.id, label, null, group.id)
       setNewSubgroupName('')
       await refetch()
+      toast(`Sous-groupe ${label} créé`)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Création impossible', 'error')
     } finally {
       setBusy(false)
     }
@@ -94,6 +103,9 @@ export default function CoachGroups() {
       for (const m of sg?.members ?? []) await moveAthleteToGroup(subgroupId, group.id, m.id)
       await deleteGroup(subgroupId)
       await refetch()
+      toast('Sous-groupe supprimé')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Suppression impossible', 'error')
     } finally {
       setBusy(false)
     }

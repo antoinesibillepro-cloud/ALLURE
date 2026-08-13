@@ -1,5 +1,5 @@
 import { useState, useEffect, type ReactElement } from 'react'
-import { fetchConversations } from './lib/queries/messages'
+import { fetchConversations, fetchUnreadCounts, subscribeToAnyMessage } from './lib/queries/messages'
 import { subscribeToOwnMessages, fireNotification } from './lib/notifications'
 import { useApp } from './context/AppContext'
 import AuthScreen from './screens/AuthScreen'
@@ -19,6 +19,9 @@ import CoachCommunity from './screens/coach/CoachCommunity'
 import CoachAdmin from './screens/coach/CoachAdmin'
 import CoachAthletes from './screens/coach/CoachAthletes'
 import CoachRaces from './screens/coach/CoachRaces'
+import GlobalSearch from './components/GlobalSearch'
+import NotificationBell from './components/NotificationBell'
+import type { SearchResult } from './lib/queries/search'
 
 // ── Icons ──────────────────────────────────────────────
 function IcHome({ active }: { active: boolean }) {
@@ -143,15 +146,6 @@ function IcSettings({ active }: { active: boolean }) {
     </svg>
   )
 }
-function IcBell() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <path d="M8 1C5.8 1 4 3 4 5.5V9L2 11V12H14V11L12 9V5.5C12 3 10.2 1 8 1Z" stroke="currentColor" strokeWidth="1.3" fill="none" />
-      <path d="M6.5 13.5C6.5 14.3 7.2 15 8 15C8.8 15 9.5 14.3 9.5 13.5" stroke="currentColor" strokeWidth="1.3" fill="none" />
-    </svg>
-  )
-}
-
 // ── Nav config ────────────────────────────────────────
 type AScreen = 'home' | 'training' | 'community' | 'messaging' | 'stats' | 'club'
 type CScreen = 'dashboard' | 'groups' | 'athletes' | 'sessions' | 'community' | 'messaging' | 'clubstats' | 'races' | 'admin'
@@ -191,14 +185,13 @@ const C_TITLES: Record<CScreen, string> = {
   dashboard: 'Dashboard coach', groups: 'Groupes', athletes: 'Athlètes', sessions: 'Créer une séance', community: 'Communauté', messaging: 'Messagerie', clubstats: 'Statistiques club', races: 'Calendrier de courses', admin: 'Administration du club',
 }
 
-const UNREAD = 3
-
 export default function App() {
   const { isDark, toggleTheme, session, profile, profileLoading, signOut } = useApp()
   const [aScreen, setAScreen] = useState<AScreen>('home')
   const [cScreen, setCScreen] = useState<CScreen>('dashboard')
   const [showProfile, setShowProfile] = useState(false)
   const [keyboardOpen, setKeyboardOpen] = useState(false)
+  const [unread, setUnread] = useState(0)
 
   useEffect(() => {
     function isTextInput(el: Element | null) {
@@ -220,6 +213,27 @@ export default function App() {
       window.removeEventListener('focusout', handleFocusOut)
     }
   }, [])
+
+  // Real unread badge: initial count, then recount whenever any message lands.
+  useEffect(() => {
+    if (!profile) return
+    let cancelled = false
+    const recount = () => {
+      fetchUnreadCounts(profile.id)
+        .then((r) => { if (!cancelled) setUnread(r.total) })
+        .catch(() => {})
+    }
+    recount()
+    const unsub = subscribeToAnyMessage(recount)
+    return () => { cancelled = true; unsub() }
+  }, [profile?.id])
+
+  // Recount when leaving the messaging screen, which is where reads get stamped.
+  const onMessagingScreen = profile?.role === 'coach' ? cScreen === 'messaging' : aScreen === 'messaging'
+  useEffect(() => {
+    if (!profile || onMessagingScreen) return
+    fetchUnreadCounts(profile.id).then((r) => setUnread(r.total)).catch(() => {})
+  }, [onMessagingScreen, profile?.id])
 
   useEffect(() => {
     if (!profile) return
@@ -299,6 +313,22 @@ export default function App() {
     else setAScreen(id as AScreen)
   }
 
+  /** Sends the user to the screen that owns the picked search result. */
+  function handleSearchPick(r: SearchResult) {
+    setShowProfile(false)
+    if (isCoach) {
+      const dest: Record<SearchResult['kind'], CScreen> = {
+        athlete: 'athletes', group: 'groups', session: 'sessions', race: 'races',
+      }
+      setCScreen(dest[r.kind])
+    } else {
+      const dest: Record<SearchResult['kind'], AScreen> = {
+        athlete: 'club', group: 'club', session: 'training', race: 'training',
+      }
+      setAScreen(dest[r.kind])
+    }
+  }
+
   const navItems = isCoach ? COACH_NAV : ATHLETE_NAV
   const COACH_MOBILE_IDS: CScreen[] = ['dashboard', 'athletes', 'sessions', 'messaging', 'races']
   const mobileNavItems = isCoach
@@ -330,16 +360,8 @@ export default function App() {
             <p className="font-black text-[15px] leading-none tracking-tight" style={{ color: 'var(--text-1)' }}>ALLURE</p>
           </button>
 
-          {/* Search bar — like Strava */}
-          <div className="flex items-center gap-2 px-3.5 py-2 rounded-full w-52 shrink-0"
-            style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.3" />
-              <path d="M10 10L12.5 12.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-            </svg>
-            <input placeholder="Rechercher..." className="bg-transparent text-sm outline-none w-full"
-              style={{ color: 'var(--text-1)' }} />
-          </div>
+          {/* Club-wide search — athletes, groups, sessions, races */}
+          <GlobalSearch clubId={profile.club_id} onPick={handleSearchPick} />
 
           {/* Nav links — text only like Strava */}
           <nav className="flex items-center h-full">
@@ -353,9 +375,9 @@ export default function App() {
                     fontWeight: active ? 700 : 400,
                   }}>
                   {item.label}
-                  {item.id === 'messaging' && UNREAD > 0 && (
-                    <span className="ml-1 w-4 h-4 bg-[#F2C400] text-[#0E0E0D] text-[9px] font-black rounded-full flex items-center justify-center pulse">
-                      {UNREAD}
+                  {item.id === 'messaging' && unread > 0 && (
+                    <span className="ml-1 min-w-4 h-4 px-1 bg-[#F2C400] text-[#0E0E0D] text-[9px] font-black rounded-full flex items-center justify-center">
+                      {unread > 9 ? '9+' : unread}
                     </span>
                   )}
                   {active && (
@@ -375,12 +397,18 @@ export default function App() {
             {isDark ? <IcSun /> : <IcMoon />}
           </button>
 
-          {/* Notifications */}
-          <button className="btn-press relative w-9 h-9 rounded-full flex items-center justify-center"
-            style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
-            <IcBell />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#E4574A] rounded-full pulse" />
-          </button>
+          {/* Notifications — real feed (unread DMs, next sessions, next races) */}
+          <NotificationBell
+            profileId={profile.id}
+            clubId={profile.club_id}
+            isCoach={isCoach}
+            onPick={(kind) => {
+              setShowProfile(false)
+              if (kind === 'message') handleNav('messaging')
+              else if (kind === 'session') handleNav(isCoach ? 'sessions' : 'training')
+              else handleNav(isCoach ? 'races' : 'training')
+            }}
+          />
 
           {/* Avatar + chevron — like Strava */}
           <button onClick={() => setShowProfile(true)}
@@ -399,7 +427,14 @@ export default function App() {
 
       {/* ── Content ── */}
       <main className={`lg:pt-[60px] ${isMessaging && !showProfile ? '' : 'min-h-screen pb-28 lg:pb-6'}`}>
-        <div key={contentKey} className="page-enter h-full">
+        {/*
+          The messaging screen renders a `position: fixed` full-screen overlay on mobile.
+          `page-enter` animates a transform and keeps it (fill-mode: both), and any
+          transform on an ancestor becomes the containing block for fixed descendants —
+          which collapsed that overlay to the 0-height <main> and blanked the screen.
+          So messaging opts out of the page transition.
+        */}
+        <div key={contentKey} className={isMessaging && !showProfile ? 'h-full' : 'page-enter h-full'}>
           {renderContent()}
         </div>
       </main>
@@ -424,8 +459,10 @@ export default function App() {
                   style={{ color: active ? '#F2C400' : 'var(--text-2)', transition: 'color 0.15s ease' }}>
                   {item.short}
                 </span>
-                {item.id === 'messaging' && UNREAD > 0 && (
-                  <span className="absolute top-1.5 right-2 w-2 h-2 bg-[#F2C400] rounded-full pulse" />
+                {item.id === 'messaging' && unread > 0 && (
+                  <span className="absolute top-1 right-1.5 min-w-[15px] h-[15px] px-1 bg-[#F2C400] text-[#0E0E0D] text-[8px] font-black rounded-full flex items-center justify-center">
+                    {unread > 9 ? '9+' : unread}
+                  </span>
                 )}
               </button>
             )

@@ -7,6 +7,7 @@ import {
   RACE_TYPE_LABEL, type ClubRace, type RaceType,
 } from '../../lib/queries/clubRaces'
 import { fetchClubAthletes } from '../../lib/queries/groups'
+import { useToast } from '../../components/Toast'
 
 const RACE_TYPE_COLOR: Record<RaceType, string> = {
   piste: '#5B91D8', route: '#F2C400', cross: '#A9683F', trail: '#5EBA65', stage: '#7B6FD6',
@@ -82,6 +83,7 @@ function MonthCalendar({ races, selectedDate, onSelectDate }: { races: ClubRace[
 
 export default function CoachRaces() {
   const { profile } = useApp()
+  const toast = useToast()
   const { data: races, refetch } = useQuery<ClubRace[]>(
     () => (profile ? fetchClubRaces(profile.club_id) : Promise.resolve([])),
     [profile?.club_id],
@@ -106,17 +108,26 @@ export default function CoachRaces() {
     if (!profile || !title.trim() || !selectedDate) return
     setBusy(true)
     try {
-      await createClubRace(profile.club_id, profile.id, { title: title.trim(), event_date: selectedDate, location: location.trim() || null, race_type: raceType })
+      const label = title.trim()
+      await createClubRace(profile.club_id, profile.id, { title: label, event_date: selectedDate, location: location.trim() || null, race_type: raceType })
       setTitle(''); setLocation(''); setRaceType('piste'); setShowCreate(false)
       await refetch()
+      toast(`${label} ajouté au calendrier`)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Création impossible', 'error')
     } finally {
       setBusy(false)
     }
   }
 
   async function handleDelete(id: string) {
-    await deleteClubRace(id)
-    await refetch()
+    try {
+      await deleteClubRace(id)
+      await refetch()
+      toast('Événement supprimé')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Suppression impossible', 'error')
+    }
   }
 
   async function handleAssign(raceId: string) {

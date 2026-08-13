@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Avatar, IconSearch } from '../components/ui'
 import { useApp } from '../context/AppContext'
 import { useQuery } from '../lib/useQuery'
-import { fetchConversations, fetchMessages, sendMessage, subscribeToConversation, leaveConversation, type ConversationSummary } from '../lib/queries/messages'
+import { fetchConversations, fetchMessages, sendMessage, subscribeToConversation, leaveConversation, markConversationRead, type ConversationSummary } from '../lib/queries/messages'
 
 function initialsOf(name: string) {
   return name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
@@ -30,6 +30,12 @@ export default function MessagingScreen() {
   )
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+
+  // Stamp the conversation read once its messages are on screen.
+  useEffect(() => {
+    if (!activeConvId || !profile || !messages?.length) return
+    markConversationRead(activeConvId, profile.id).catch(() => {})
+  }, [activeConvId, profile?.id, messages?.length])
 
   // Full viewport lock on mobile: without this, iOS Safari scrolls the whole
   // document (not just the message list) to keep a focused input visible

@@ -116,6 +116,53 @@ export async function leaveConversation(conversationId: string, profileId: strin
   if (error) throw error
 }
 
+/**
+ * Unread message count per conversation, plus the total.
+ * A message counts as unread when it was sent by someone else after my `last_read_at`
+ * on that conversation (a null `last_read_at` means I never opened it).
+ */
+export async function fetchUnreadCounts(profileId: string): Promise<{ total: number; byConversation: Record<string, number> }> {
+  const { data: parts } = await supabase
+    .from('conversation_participants')
+    .select('conversation_id, last_read_at')
+    .eq('profile_id', profileId)
+  if (!parts?.length) return { total: 0, byConversation: {} }
+
+  const { data: msgs } = await supabase
+    .from('messages')
+    .select('conversation_id, sender_id, created_at')
+    .in('conversation_id', parts.map((p) => p.conversation_id))
+    .neq('sender_id', profileId)
+  if (!msgs?.length) return { total: 0, byConversation: {} }
+
+  const lastReadByConvo = new Map(parts.map((p) => [p.conversation_id, p.last_read_at]))
+  const byConversation: Record<string, number> = {}
+  for (const m of msgs) {
+    const lastRead = lastReadByConvo.get(m.conversation_id)
+    if (lastRead && m.created_at <= lastRead) continue
+    byConversation[m.conversation_id] = (byConversation[m.conversation_id] ?? 0) + 1
+  }
+  return { total: Object.values(byConversation).reduce((s, n) => s + n, 0), byConversation }
+}
+
+/** Stamps `last_read_at` to now — call when the user opens a conversation. */
+export async function markConversationRead(conversationId: string, profileId: string) {
+  await supabase
+    .from('conversation_participants')
+    .update({ last_read_at: new Date().toISOString() })
+    .eq('conversation_id', conversationId)
+    .eq('profile_id', profileId)
+}
+
+/** Fires whenever any message lands anywhere in the club — used to refresh the unread badge. */
+export function subscribeToAnyMessage(onInsert: () => void) {
+  const channel = supabase
+    .channel('messages:all')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, onInsert)
+    .subscribe()
+  return () => { supabase.removeChannel(channel) }
+}
+
 export function subscribeToConversation(conversationId: string, onInsert: () => void) {
   const channel = supabase
     .channel(`messages:${conversationId}`)

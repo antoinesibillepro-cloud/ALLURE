@@ -10,6 +10,7 @@ import {
 } from '../../lib/queries/profileExtras'
 import { fetchDisciplineBreakdown, type DisciplineBreakdown } from '../../lib/queries/crossTraining'
 import { DonutChart } from '../../components/charts'
+import { useToast } from '../../components/Toast'
 
 function initialsOf(name: string) {
   return name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
@@ -27,6 +28,7 @@ function AthleteDetail({ profileId, name }: { profileId: string; name: string })
   const { data: totalKm } = useQuery(() => fetchAthleteTotalKm(profileId), [profileId])
   const { data: lastActivity } = useQuery(() => fetchLastActivity(profileId), [profileId])
   const { data: weekStats } = useQuery(() => fetchAthleteWeekStats(profileId, weekStart.toISOString().slice(0, 10), weekEnd.toISOString().slice(0, 10)), [profileId])
+  const toast = useToast()
   const { data: records, refetch: refetchRecords } = useQuery<PersonalRecord[]>(() => fetchPersonalRecords(profileId), [profileId])
   const [newDiscipline, setNewDiscipline] = useState('')
   const [newValue, setNewValue] = useState('')
@@ -34,9 +36,15 @@ function AthleteDetail({ profileId, name }: { profileId: string; name: string })
 
   async function handleAddRecord() {
     if (!newDiscipline.trim() || !newValue.trim()) return
-    await createPersonalRecord(profileId, newDiscipline.trim(), newValue.trim(), newDate)
-    setNewDiscipline(''); setNewValue('')
-    refetchRecords()
+    const label = newDiscipline.trim()
+    try {
+      await createPersonalRecord(profileId, label, newValue.trim(), newDate)
+      setNewDiscipline(''); setNewValue('')
+      refetchRecords()
+      toast(`Record ${label} enregistré`)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Enregistrement impossible', 'error')
+    }
   }
   const { data: injuries } = useQuery<Injury[]>(() => fetchInjuries(profileId), [profileId])
   const { data: breakdown } = useQuery<DisciplineBreakdown[]>(() => fetchDisciplineBreakdown(profileId, monthAgo, now.toISOString()), [profileId])

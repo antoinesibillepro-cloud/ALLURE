@@ -9,6 +9,8 @@ import {
 import { ensureWeeklyClubChallenge } from '../../lib/queries/community'
 import { sendMemberEmail } from '../../lib/queries/clubAdmin'
 import { fetchOrCreateDm, sendMessage } from '../../lib/queries/messages'
+import { SkeletonRows, Skeleton, CountUp } from '../../components/Skeleton'
+import { useToast } from '../../components/Toast'
 
 const STATUS_LABEL: Record<VigilanceAthlete['status'], string> = { alerte: 'Alerte', attention: 'À surveiller', ok: 'En forme' }
 const STATUS_COLOR: Record<VigilanceAthlete['status'], string> = { alerte: '#E4574A', attention: '#F2C400', ok: '#5EBA65' }
@@ -17,12 +19,13 @@ export default function CoachDashboard() {
   const { profile } = useApp()
   const clubId = profile?.club_id ?? ''
 
-  const { data: kpis } = useQuery(() => (clubId ? fetchClubKpis(clubId) : Promise.resolve(null)), [clubId])
-  const { data: groups } = useQuery(() => (clubId ? fetchGroupCompletionThisWeek(clubId) : Promise.resolve([])), [clubId])
-  const { data: feed } = useQuery(() => (clubId ? fetchClubActivityFeed(clubId) : Promise.resolve([])), [clubId])
-  const { data: vigilance } = useQuery(() => (clubId ? fetchAthleteVigilance(clubId) : Promise.resolve([])), [clubId])
+  const toast = useToast()
+  const { data: kpis, loading: kpisLoading } = useQuery(() => (clubId ? fetchClubKpis(clubId) : Promise.resolve(null)), [clubId])
+  const { data: groups, loading: groupsLoading } = useQuery(() => (clubId ? fetchGroupCompletionThisWeek(clubId) : Promise.resolve([])), [clubId])
+  const { data: feed, loading: feedLoading } = useQuery(() => (clubId ? fetchClubActivityFeed(clubId) : Promise.resolve([])), [clubId])
+  const { data: vigilance, loading: vigilanceLoading } = useQuery(() => (clubId ? fetchAthleteVigilance(clubId) : Promise.resolve([])), [clubId])
   const toWatch = (vigilance ?? []).filter((v) => v.status !== 'ok')
-  const { data: fillStatus } = useQuery(() => (clubId ? fetchWeeklyFillStatus(clubId) : Promise.resolve([])), [clubId])
+  const { data: fillStatus, loading: fillLoading } = useQuery(() => (clubId ? fetchWeeklyFillStatus(clubId) : Promise.resolve([])), [clubId])
   const pendingAthletes = (fillStatus ?? []).filter((a) => a.planned > 0 && a.done < a.planned)
   const [relancingId, setRelancingId] = useState<string | null>(null)
   const [relancedIds, setRelancedIds] = useState<Set<string>>(new Set())
@@ -33,10 +36,16 @@ export default function CoachDashboard() {
     try {
       const missing = athlete.planned - athlete.done
       const body = `${athlete.name.split(' ')[0]}, tu as ${missing} séance${missing > 1 ? 's' : ''} de la semaine encore à valider (${athlete.pendingTitles.slice(0, 3).join(', ')}). Pense à rentrer tes chronos !`
-      await Promise.allSettled([
-        ...(athlete.email ? [sendMemberEmail(athlete.email, 'Séances à valider cette semaine', body)] : []),
+      const [emailRes, dmRes] = await Promise.allSettled([
+        athlete.email ? sendMemberEmail(athlete.email, 'Séances à valider cette semaine', body) : Promise.reject(new Error('no email')),
         fetchOrCreateDm(profile.club_id, profile.id, athlete.id).then((convoId) => sendMessage(convoId, profile.id, body)),
       ])
+      if (dmRes.status === 'rejected' && emailRes.status === 'rejected') {
+        toast(`Relance de ${athlete.name.split(' ')[0]} impossible`, 'error')
+        return
+      }
+      const channels = [emailRes.status === 'fulfilled' && 'email', dmRes.status === 'fulfilled' && 'message'].filter(Boolean)
+      toast(`${athlete.name.split(' ')[0]} relancé par ${channels.join(' + ')}`)
       setRelancedIds((prev) => new Set(prev).add(athlete.id))
     } finally {
       setRelancingId(null)
@@ -69,9 +78,14 @@ export default function CoachDashboard() {
           { label: 'Séances publiées', value: kpis?.sessionsPublished ?? 0, unit: '', color: '#F2C400' },
         ].map((kpi) => (
           <Card key={kpi.label} className="!p-4 text-center">
-            <p className="text-3xl font-black leading-none" style={{ color: kpi.color }}>
-              {kpi.value}<span className="text-base font-medium" style={{ color: 'var(--text-2)' }}>{kpi.unit}</span>
-            </p>
+            {kpisLoading ? (
+              <div className="flex justify-center"><Skeleton w={48} h={30} /></div>
+            ) : (
+              <p className="text-3xl font-black leading-none" style={{ color: kpi.color }}>
+                <CountUp value={kpi.value} />
+                <span className="text-base font-medium" style={{ color: 'var(--text-2)' }}>{kpi.unit}</span>
+              </p>
+            )}
             <p className="text-[9px] uppercase tracking-widest mt-2" style={{ color: 'var(--text-2)' }}>{kpi.label}</p>
           </Card>
         ))}
@@ -79,7 +93,19 @@ export default function CoachDashboard() {
 
       {/* Group cards */}
       <SectionLabel>Groupes</SectionLabel>
-      {!groups?.length ? (
+      {groupsLoading ? (
+        <div className="space-y-3">
+          {[0, 1, 2].map((i) => (
+            <Card key={i} className="!p-5">
+              <div className="flex items-start justify-between">
+                <div className="space-y-2"><Skeleton w={140} h={14} /><Skeleton w={80} h={10} /></div>
+                <Skeleton w={48} h={24} />
+              </div>
+              <div className="mt-3"><Skeleton w="100%" h={6} r={999} /></div>
+            </Card>
+          ))}
+        </div>
+      ) : !groups?.length ? (
         <Card><p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Aucun groupe pour l'instant.</p></Card>
       ) : (
         <div className="space-y-3">
@@ -121,14 +147,17 @@ export default function CoachDashboard() {
             </span>
           )}
         </div>
-        {!fillStatus?.length ? (
+        {fillLoading ? (
+          <SkeletonRows count={2} />
+        ) : !fillStatus?.length ? (
           <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Aucun athlète pour l&apos;instant.</p>
         ) : !pendingAthletes.length ? (
           <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Tout le monde a validé ses séances de la semaine.</p>
         ) : (
           <div className="space-y-0 mt-1">
-            {pendingAthletes.map((a) => (
-              <div key={a.id} className="flex items-center gap-3 py-2.5" style={{ borderBottom: '1px solid var(--border)' }}>
+            {pendingAthletes.map((a, i) => (
+              <div key={a.id} className="row-in flex items-center gap-3 py-2.5"
+                style={{ borderBottom: '1px solid var(--border)', animationDelay: `${Math.min(i * 40, 240)}ms` }}>
                 <Avatar initials={a.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()} size={36} />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>{a.name}</p>
@@ -154,12 +183,15 @@ export default function CoachDashboard() {
       {/* Vigilance */}
       <Card>
         <SectionLabel>À surveiller</SectionLabel>
-        {!toWatch.length ? (
+        {vigilanceLoading ? (
+          <SkeletonRows count={2} />
+        ) : !toWatch.length ? (
           <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Tout le monde est en forme, aucune alerte.</p>
         ) : (
           <div className="space-y-0 mt-1">
-            {toWatch.map((v) => (
-              <div key={v.id} className="flex items-center gap-3 py-2.5" style={{ borderBottom: '1px solid var(--border)' }}>
+            {toWatch.map((v, i) => (
+              <div key={v.id} className="row-in flex items-center gap-3 py-2.5"
+                style={{ borderBottom: '1px solid var(--border)', animationDelay: `${Math.min(i * 40, 240)}ms` }}>
                 <Avatar initials={v.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()} size={36} />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>{v.name}</p>
@@ -181,13 +213,15 @@ export default function CoachDashboard() {
       {/* Activity feed */}
       <Card>
         <SectionLabel>Activité récente du club</SectionLabel>
-        {!feed?.length ? (
+        {feedLoading ? (
+          <SkeletonRows count={3} />
+        ) : !feed?.length ? (
           <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Aucune activité pour l'instant.</p>
         ) : (
           <div className="space-y-0">
-            {feed.map((item) => (
-              <div key={item.id} className="flex items-center gap-3 py-3"
-                style={{ borderBottom: '1px solid var(--border)' }}>
+            {feed.map((item, i) => (
+              <div key={item.id} className="row-in flex items-center gap-3 py-3"
+                style={{ borderBottom: '1px solid var(--border)', animationDelay: `${Math.min(i * 35, 245)}ms` }}>
                 <Avatar initials={item.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()} size={36} />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm" style={{ color: 'var(--text-1)' }}>
