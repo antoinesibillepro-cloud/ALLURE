@@ -8,9 +8,9 @@ import { fetchAthleteSessions, validateSession, logFreeSession, saveSessionSplit
 import { fetchTodayCheckin, saveCheckin, type DailyCheckin } from '../lib/queries/checkins'
 import { fetchAthleteWeekStats, fetchAthleteTotalKm, fetchLastActivity } from '../lib/queries/stats'
 import { fetchNextCompetition, fetchMyGroups, fetchWeightLogs, saveWeightLog, type WeightLog } from '../lib/queries/profileExtras'
-import { fetchDisciplineBreakdown, fetchWeeklyLoad, type DisciplineBreakdown } from '../lib/queries/crossTraining'
+import { fetchDisciplineBreakdown, fetchACWR, type DisciplineBreakdown, type ACWRResult } from '../lib/queries/crossTraining'
 import { fetchSessionTypeBreakdown, TYPE_COLORS, type TypeBreakdown } from '../lib/queries/stats'
-import { DonutChart, LoadChart, GenericDonutChart } from '../components/charts'
+import { DonutChart, GenericDonutChart } from '../components/charts'
 import AthleteDesktopSidebar from '../components/AthleteDesktopSidebar'
 
 function startOfWeek(d: Date) {
@@ -160,6 +160,103 @@ const FORM_FIELDS: Array<{ key: FormKey; label: string; icon: (c: string) => Rea
   { key: 'stress', label: 'Stress', icon: (c) => <IcBrain color={c} />, color: '#5EBA65' },
 ]
 
+// ── ACWR Card (charge d'entraînement) ────────────────────────────────────
+
+function ACWRCard({ acwr }: { acwr: ACWRResult | null | undefined }) {
+  const [visible, setVisible] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setVisible(true) }, { threshold: 0.2 })
+    if (ref.current) obs.observe(ref.current)
+    return () => obs.disconnect()
+  }, [])
+
+  if (!acwr || acwr.weeks.every((w) => w.acute === 0 && w.chronic === 0)) {
+    return (
+      <Card>
+        <SectionLabel>Charge d&apos;entraînement — ACWR</SectionLabel>
+        <p className="text-sm py-2 mt-1" style={{ color: 'var(--text-2)' }}>Pas encore assez de données de charge.</p>
+      </Card>
+    )
+  }
+
+  const { ratio, acuteLoad, chronicLoad, weeks } = acwr
+  const zoneColor = ratio < 0.8 ? '#4278C4' : ratio < 1.3 ? '#3D9E4A' : ratio < 1.5 ? '#F2C400' : '#C94040'
+  const zoneLabel = ratio < 0.8 ? 'Sous-charge' : ratio < 1.3 ? 'Zone optimale' : ratio < 1.5 ? 'Zone de risque' : 'Surcharge'
+  const maxVal = Math.max(...weeks.flatMap((w) => [w.acute, w.chronic]), 1)
+
+  return (
+    <Card className="card-lift">
+      <div className="flex items-center justify-between mb-3">
+        <SectionLabel>Charge d&apos;entraînement — ACWR</SectionLabel>
+        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full"
+          style={{ background: `${zoneColor}18`, color: zoneColor }}>{zoneLabel}</span>
+      </div>
+
+      <div className="flex items-center gap-6 mb-4">
+        <div>
+          <p className="text-4xl font-black leading-none" style={{ color: zoneColor }}>{ratio.toFixed(2)}</p>
+          <p className="text-[10px] mt-1" style={{ color: 'var(--text-2)' }}>Ratio aiguë / chronique</p>
+        </div>
+        <div className="flex-1 space-y-2">
+          <div>
+            <div className="flex justify-between text-[10px] mb-1" style={{ color: 'var(--text-2)' }}>
+              <span>Aiguë (7j)</span>
+              <span className="font-bold" style={{ color: 'var(--text-1)' }}>{acuteLoad} UA</span>
+            </div>
+            <ProgressBar pct={(acuteLoad / maxVal) * 100} color="#F2C400" />
+          </div>
+          <div>
+            <div className="flex justify-between text-[10px] mb-1" style={{ color: 'var(--text-2)' }}>
+              <span>Chronique (28j)</span>
+              <span className="font-bold" style={{ color: 'var(--text-1)' }}>{chronicLoad} UA</span>
+            </div>
+            <ProgressBar pct={(chronicLoad / maxVal) * 100} color="var(--text-2)" />
+          </div>
+        </div>
+      </div>
+
+      <div ref={ref} className="flex items-end gap-1.5 mb-3" style={{ height: 56 }}>
+        {weeks.map((w, i) => {
+          const isCurrent = i === weeks.length - 1
+          const targetH = Math.round((w.acute / maxVal) * 44)
+          const weekRatio = w.chronic > 0 ? w.acute / w.chronic : 0
+          const col = weekRatio < 0.8 ? '#4278C4' : weekRatio < 1.3 ? '#3D9E4A' : weekRatio < 1.5 ? '#F2C400' : '#C94040'
+          return (
+            <div key={i} className="flex-1 flex flex-col items-center gap-1" style={{ height: 56 }}>
+              <div className="w-full flex items-end" style={{ height: 44 }}>
+                <div className="w-full rounded-t-sm"
+                  style={{
+                    height: visible ? targetH : 0,
+                    background: isCurrent ? col : 'var(--surface3)',
+                    border: isCurrent ? `1px solid ${col}` : 'none',
+                    transition: `height 0.6s cubic-bezier(0.16, 1, 0.3, 1) ${i * 60}ms`,
+                  }} />
+              </div>
+              <span className="text-[9px]" style={{ color: isCurrent ? 'var(--text-1)' : 'var(--text-2)' }}>{w.label}</span>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="pt-3 grid grid-cols-4 gap-1.5" style={{ borderTop: '1px solid var(--border)' }}>
+        {[
+          { label: '< 0.8', desc: 'Sous-charge', color: '#4278C4' },
+          { label: '0.8-1.3', desc: 'Optimal', color: '#3D9E4A' },
+          { label: '1.3-1.5', desc: 'Risque', color: '#F2C400' },
+          { label: '> 1.5', desc: 'Danger', color: '#C94040' },
+        ].map((z) => (
+          <div key={z.label} className="text-center">
+            <div className="h-1 rounded-full mb-1" style={{ background: z.color }} />
+            <p className="text-[8px] font-bold" style={{ color: z.color }}>{z.label}</p>
+            <p className="text-[8px]" style={{ color: 'var(--text-2)' }}>{z.desc}</p>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 // ── Main screen ───────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
@@ -251,12 +348,12 @@ export default function HomeScreen() {
     () => (profile ? fetchDisciplineBreakdown(profile.id, monthAgo, today.toISOString()) : Promise.resolve([])),
     [profile?.id],
   )
-  const { data: load } = useQuery(
-    () => (profile ? fetchWeeklyLoad(profile.id) : Promise.resolve([])),
+  const { data: acwr } = useQuery(
+    () => (profile ? fetchACWR(profile.id) : Promise.resolve(null)),
     [profile?.id],
   )
   const { data: typeBreakdown } = useQuery<TypeBreakdown[]>(
-    () => (profile ? fetchSessionTypeBreakdown(profile.id, monthAgo, today.toISOString()) : Promise.resolve([])),
+    () => (profile ? fetchSessionTypeBreakdown(profile.id, profile.club_id, monthAgo, today.toISOString()) : Promise.resolve([])),
     [profile?.id],
   )
 
@@ -304,7 +401,7 @@ export default function HomeScreen() {
 
   const overviewBlock = (
     <div className="space-y-4">
-      <Card>
+      <Card className="card-lift">
         <SectionLabel>Répartition par sport · 30 derniers jours</SectionLabel>
         <div className="mt-3">
           {!breakdown?.length ? (
@@ -314,21 +411,17 @@ export default function HomeScreen() {
           )}
         </div>
       </Card>
-      <Card>
+      <Card className="card-lift">
         <SectionLabel>Répartition par type d&apos;entraînement · 30 derniers jours</SectionLabel>
         <div className="mt-3">
           {!typeBreakdown?.length ? (
             <p className="text-sm py-2" style={{ color: 'var(--text-2)' }}>Aucune séance enregistrée sur les 30 derniers jours.</p>
           ) : (
-            <GenericDonutChart segments={typeBreakdown.map((t) => ({ label: t.type, count: t.count }))} colors={TYPE_COLORS} />
+            <GenericDonutChart segments={typeBreakdown.map((t) => ({ label: t.type, count: t.count, color: t.color }))} colors={TYPE_COLORS} />
           )}
         </div>
       </Card>
-      <Card>
-        <SectionLabel>Charge d&apos;entraînement</SectionLabel>
-        <p className="text-xs mb-3 mt-0.5" style={{ color: 'var(--text-2)' }}>RPE × durée · 8 dernières semaines</p>
-        {load && load.length > 0 ? <LoadChart data={load} /> : <p className="text-sm py-2" style={{ color: 'var(--text-2)' }}>Pas encore de données de charge.</p>}
-      </Card>
+      <ACWRCard acwr={acwr} />
     </div>
   )
 

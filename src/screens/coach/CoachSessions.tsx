@@ -96,7 +96,7 @@ type CoachSessionRow = {
   session_assignments: { group_id: string; groups: { name: string } | null }[]
 }
 
-function SessionLibraryRow({ session, onChanged, clubId, coachId }: { session: CoachSessionRow; onChanged: () => void; clubId: string; coachId: string }) {
+function SessionLibraryRow({ session, onChanged, clubId, coachId, color }: { session: CoachSessionRow; onChanged: () => void; clubId: string; coachId: string; color: string }) {
   const [expanded, setExpanded] = useState(false)
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(session.title)
@@ -153,12 +153,15 @@ function SessionLibraryRow({ session, onChanged, clubId, coachId }: { session: C
   return (
     <Card className="!p-0 overflow-hidden">
       <button onClick={() => setExpanded((v) => !v)} className="w-full flex items-center gap-3 p-4 text-left">
-        <div className="w-11 h-11 rounded-2xl flex flex-col items-center justify-center shrink-0" style={{ background: 'rgba(242,196,0,0.12)' }}>
-          <span className="text-xs font-black text-[#F2C400]">{new Date(session.scheduled_at).toLocaleDateString('fr-FR', { day: 'numeric' })}</span>
-          <span className="text-[8px] font-bold uppercase text-[#F2C400]">{new Date(session.scheduled_at).toLocaleDateString('fr-FR', { month: 'short' })}</span>
+        <div className="w-11 h-11 rounded-2xl flex flex-col items-center justify-center shrink-0" style={{ background: `${color}1f` }}>
+          <span className="text-xs font-black" style={{ color }}>{new Date(session.scheduled_at).toLocaleDateString('fr-FR', { day: 'numeric' })}</span>
+          <span className="text-[8px] font-bold uppercase" style={{ color }}>{new Date(session.scheduled_at).toLocaleDateString('fr-FR', { month: 'short' })}</span>
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>{session.title}</p>
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />
+            <p className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>{session.title}</p>
+          </div>
           <p className="text-xs truncate" style={{ color: 'var(--text-2)' }}>{groupNames || 'Aucun groupe'} · {session.status === 'published' ? 'Publiée' : 'Brouillon'}</p>
         </div>
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>
@@ -435,12 +438,13 @@ export default function CoachSessions() {
               <div className="flex flex-wrap gap-2 mb-2">
                 {sessionTypes?.map((t) => (
                   <button key={t.id} onClick={() => setSessionType(t.name)}
-                    className="px-3 py-1.5 rounded-[12px] text-xs font-semibold transition-all"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-[12px] text-xs font-semibold transition-all"
                     style={{
-                      background: sessionType === t.name ? 'rgba(242,196,0,0.15)' : 'var(--surface2)',
-                      color: sessionType === t.name ? '#F2C400' : 'var(--text-2)',
-                      border: sessionType === t.name ? '1px solid rgba(242,196,0,0.3)' : '1px solid transparent',
+                      background: sessionType === t.name ? `${t.color}26` : 'var(--surface2)',
+                      color: sessionType === t.name ? t.color : 'var(--text-2)',
+                      border: sessionType === t.name ? `1px solid ${t.color}4d` : '1px solid transparent',
                     }}>
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: t.color }} />
                     {t.name}
                   </button>
                 ))}
@@ -634,7 +638,10 @@ export default function CoachSessions() {
               <p className="text-sm text-center py-6" style={{ color: 'var(--text-2)' }}>Aucune séance créée pour l&apos;instant.</p>
             </Card>
           ) : (
-            coachSessions.map((s) => profile && <SessionLibraryRow key={s.id} session={s} onChanged={refetchCoachSessions} clubId={profile.club_id} coachId={profile.id} />)
+            coachSessions.map((s) => profile && (
+              <SessionLibraryRow key={s.id} session={s} onChanged={refetchCoachSessions} clubId={profile.club_id} coachId={profile.id}
+                color={sessionTypes?.find((t) => t.name === s.type)?.color ?? '#F2C400'} />
+            ))
           )}
         </div>
       )}

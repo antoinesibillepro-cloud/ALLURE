@@ -198,6 +198,28 @@ export default function App() {
   const [aScreen, setAScreen] = useState<AScreen>('home')
   const [cScreen, setCScreen] = useState<CScreen>('dashboard')
   const [showProfile, setShowProfile] = useState(false)
+  const [keyboardOpen, setKeyboardOpen] = useState(false)
+
+  useEffect(() => {
+    function isTextInput(el: Element | null) {
+      if (!el) return false
+      const tag = el.tagName
+      if (tag === 'TEXTAREA') return true
+      if (tag === 'INPUT') {
+        const type = (el as HTMLInputElement).type
+        return !['button', 'checkbox', 'radio', 'range', 'submit', 'file', 'color'].includes(type)
+      }
+      return false
+    }
+    function handleFocusIn(e: FocusEvent) { if (isTextInput(e.target as Element)) setKeyboardOpen(true) }
+    function handleFocusOut(e: FocusEvent) { if (isTextInput(e.target as Element)) setKeyboardOpen(false) }
+    window.addEventListener('focusin', handleFocusIn)
+    window.addEventListener('focusout', handleFocusOut)
+    return () => {
+      window.removeEventListener('focusin', handleFocusIn)
+      window.removeEventListener('focusout', handleFocusOut)
+    }
+  }, [])
 
   useEffect(() => {
     if (!profile) return
@@ -378,7 +400,8 @@ export default function App() {
 
       {/* ════════════════════════════════ MOBILE ════════════════════════════════ */}
 
-      <div className="lg:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50">
+      <div className="lg:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 transition-all duration-200"
+        style={keyboardOpen ? { opacity: 0, transform: 'translate(-50%, 24px)', pointerEvents: 'none' } : undefined}>
         <nav className="glass-capsule rounded-[30px] px-1.5 py-2 flex items-center gap-0">
           {navItems.slice(0, 5).map((item) => {
             const active = item.id === activeId

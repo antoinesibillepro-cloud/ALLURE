@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, SectionLabel, BtnPrimary, Avatar } from '../../components/ui'
 import { useApp } from '../../context/AppContext'
 import { useQuery } from '../../lib/useQuery'
@@ -9,15 +9,100 @@ import { fetchClubActivityFeed, type ActivityItem } from '../../lib/queries/coac
 const KIND_LABEL: Record<string, string> = { km: 'km', sessions: 'séances', attendance: 'bilans' }
 const RANKING_LABEL: Record<keyof WeeklyRankings, string> = { km: 'Kilomètres', assiduite: 'Assiduité', recuperation: 'Récupération' }
 const RANKING_UNIT: Record<keyof WeeklyRankings, string> = { km: 'km', assiduite: '%', recuperation: '%' }
+const MEDAL_COLOR: Record<number, string> = { 0: '#F2C400', 1: '#C7CDD6', 2: '#C4794F' }
 
-function ClubKmBanner({ rankings }: { rankings: WeeklyRankings | null | undefined }) {
-  const total = (rankings?.km ?? []).reduce((s, e) => s + e.value, 0)
+function IcTrophy({ color = 'currentColor', size = 14 }: { color?: string; size?: number }) {
   return (
-    <Card className="text-center !py-6" style={{ background: '#0E0E0D' }}>
-      <p className="text-[10px] uppercase tracking-widest font-bold" style={{ color: '#F2C400' }}>Cumul du club cette semaine</p>
-      <p className="text-4xl font-black mt-1" style={{ color: '#FFFFFF' }}>{total.toFixed(1)}<span className="text-lg font-bold ml-1" style={{ color: '#F2C400' }}>km</span></p>
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <path d="M5 2H11V8C11 10.2 9.2 12 7 12 4.8 12 3 10.2 3 8V2H5Z" stroke={color} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3 4H1.5C1.5 4 1 6 3 7" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M11 4H12.5C12.5 4 13 6 11 7" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M7 12V14M5 14H9" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function HeroChallengeCard({ challenge, clubId, onViewRankings }: { challenge: Challenge; clubId: string; onViewRankings: () => void }) {
+  const { data: leaderboard } = useQuery<LeaderboardEntry[]>(
+    () => fetchChallengeLeaderboard(challenge, clubId),
+    [challenge.id],
+  )
+  const progressRef = useRef<HTMLDivElement>(null)
+  const [progVisible, setProgVisible] = useState(false)
+  useEffect(() => {
+    const el = progressRef.current
+    if (!el) return
+    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setProgVisible(true) }, { threshold: 0.2 })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [])
+
+  const total = (leaderboard ?? []).reduce((s, l) => s + l.progress, 0)
+  const pct = challenge.target_value > 0 ? Math.min(100, Math.round((total / challenge.target_value) * 100)) : 0
+  const daysLeft = Math.max(0, Math.ceil((new Date(challenge.end_date).getTime() - Date.now()) / 86400000))
+
+  return (
+    <Card topo className="!p-0 overflow-hidden card-lift">
+      <div className="px-5 pt-5 pb-4">
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div>
+            <div className="flex items-center gap-1.5 mb-1">
+              <div className="w-5 h-5 rounded-md bg-[#F2C400] flex items-center justify-center">
+                <IcTrophy color="#0E0E0D" size={12} />
+              </div>
+              <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#F2C400' }}>Défi en cours</span>
+            </div>
+            <h2 className="text-xl font-black leading-snug" style={{ color: 'var(--text-1)' }}>{challenge.title}</h2>
+          </div>
+          <div className="text-right shrink-0">
+            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>Restants</p>
+            <p className="text-3xl font-black leading-tight" style={{ color: 'var(--text-1)' }}>{daysLeft}</p>
+            <p className="text-[9px]" style={{ color: 'var(--text-2)' }}>jours</p>
+          </div>
+        </div>
+        <div ref={progressRef} className="mb-3">
+          <div className="flex items-end justify-between mb-2">
+            <div>
+              <p className="text-4xl font-black leading-none" style={{ color: 'var(--text-1)' }}>{total.toFixed(challenge.kind === 'km' ? 1 : 0)}</p>
+              <p className="text-sm mt-0.5" style={{ color: 'var(--text-2)' }}>
+                sur <span className="font-bold" style={{ color: 'var(--text-1)' }}>{challenge.target_value.toLocaleString('fr-FR')} {KIND_LABEL[challenge.kind]}</span>
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-2xl font-black" style={{ color: '#F2C400' }}>{pct}%</p>
+              <p className="text-[9px]" style={{ color: 'var(--text-2)' }}>collectif</p>
+            </div>
+          </div>
+          <div className="h-3 rounded-full overflow-hidden" style={{ background: 'var(--surface2)' }}>
+            <div className="h-full rounded-full"
+              style={{
+                width: progVisible ? `${pct}%` : '0%',
+                background: 'linear-gradient(90deg, #F2C400 0%, #FFD84D 100%)',
+                transition: 'width 1.2s cubic-bezier(0.16, 1, 0.3, 1)',
+              }} />
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center justify-between px-5 py-3" style={{ borderTop: '1px solid var(--border)', background: 'var(--surface2)' }}>
+        <p className="text-xs" style={{ color: 'var(--text-2)' }}>{leaderboard?.length ?? 0} participants · {challenge.group_id ? 'Groupe' : 'Club entier'}</p>
+        <button onClick={onViewRankings}
+          className="btn-press text-xs font-bold px-3 py-1.5 rounded-full" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+          Voir le classement
+        </button>
+      </div>
     </Card>
   )
+}
+
+function RankBadge({ rank }: { rank: number }) {
+  const color = MEDAL_COLOR[rank]
+  if (color) {
+    return (
+      <span className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black shrink-0"
+        style={{ background: color, color: '#0E0E0D' }}>{rank + 1}</span>
+    )
+  }
+  return <span className="w-6 h-6 flex items-center justify-center text-xs font-bold shrink-0" style={{ color: 'var(--text-2)' }}>{rank + 1}</span>
 }
 
 function RankingsTab({ rankings }: { rankings: WeeklyRankings | null | undefined }) {
@@ -32,13 +117,13 @@ function RankingsTab({ rankings }: { rankings: WeeklyRankings | null | undefined
             {!list.length ? (
               <p className="text-sm text-center py-3" style={{ color: 'var(--text-2)' }}>Pas encore de données cette semaine.</p>
             ) : (
-              <div className="space-y-1.5 mt-2">
+              <div className="space-y-1 mt-2">
                 {list.slice(0, 8).map((l, i) => (
-                  <div key={l.profileId} className="flex items-center gap-2">
-                    <span className="text-xs w-4 text-center font-bold" style={{ color: i < 3 ? '#F2C400' : 'var(--text-2)' }}>{i + 1}</span>
-                    <Avatar initials={l.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()} size={24} />
-                    <span className="text-xs flex-1" style={{ color: 'var(--text-1)' }}>{l.name}</span>
-                    <span className="text-xs font-bold" style={{ color: 'var(--text-1)' }}>{l.value}{RANKING_UNIT[key]}</span>
+                  <div key={l.profileId} className="flex items-center gap-2.5 py-1.5 rounded-xl px-1.5">
+                    <RankBadge rank={i} />
+                    <Avatar initials={l.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()} size={28} />
+                    <span className="text-sm flex-1 truncate font-medium" style={{ color: 'var(--text-1)' }}>{l.name}</span>
+                    <span className="text-sm font-black" style={{ color: 'var(--text-1)' }}>{l.value}<span className="text-xs font-semibold ml-0.5" style={{ color: 'var(--text-2)' }}>{RANKING_UNIT[key]}</span></span>
                   </div>
                 ))}
               </div>
@@ -132,6 +217,11 @@ export default function CoachCommunity() {
     await refetch()
   }
 
+  const today = new Date().toISOString().slice(0, 10)
+  const active = (challenges ?? []).filter((c) => c.end_date >= today)
+  const heroChallenge = [...active].sort((a, b) => a.end_date.localeCompare(b.end_date))[0] ?? null
+  const otherChallenges = (challenges ?? []).filter((c) => c.id !== heroChallenge?.id)
+
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-2xl mx-auto">
       <div className="flex items-center justify-between pt-1">
@@ -191,7 +281,9 @@ export default function CoachCommunity() {
         </Card>
       )}
 
-      <ClubKmBanner rankings={rankings} />
+      {heroChallenge && profile && (
+        <HeroChallengeCard challenge={heroChallenge} clubId={profile.club_id} onViewRankings={() => setTab('classements')} />
+      )}
 
       <div className="flex gap-1 p-0.5 rounded-2xl w-fit" style={{ background: 'var(--surface2)' }}>
         {([{ id: 'defis' as const, label: 'Défis' }, { id: 'classements' as const, label: 'Classements' }, { id: 'feed' as const, label: 'Fil du club' }]).map((t) => (
@@ -210,7 +302,7 @@ export default function CoachCommunity() {
           {!challenges?.length ? (
             <Card><p className="text-sm text-center py-6" style={{ color: 'var(--text-2)' }}>Aucun défi pour l'instant.</p></Card>
           ) : (
-            challenges.map((c) => profile && <ChallengeRow key={c.id} challenge={c} clubId={profile.club_id} onDelete={() => handleDelete(c.id)} />)
+            otherChallenges.map((c) => profile && <ChallengeRow key={c.id} challenge={c} clubId={profile.club_id} onDelete={() => handleDelete(c.id)} />)
           )}
         </div>
       )}

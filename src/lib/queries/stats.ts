@@ -233,24 +233,31 @@ export async function fetchGoodRecoveryDaysCount(profileId: string, days = 30, t
   }).length
 }
 
-export interface TypeBreakdown { type: string; count: number }
+export interface TypeBreakdown { type: string; count: number; color: string }
 const TYPE_COLORS = ['#F2C400', '#5B91D8', '#E4574A', '#7B6FD6', '#5EBA65', '#F2924D', '#4FC3D9']
+const FREE_SESSION_COLOR = '#9CA3AF'
 
-/** Breakdown of completed sessions by training type (VMA, endurance, côtes...) over [from, to). */
-export async function fetchSessionTypeBreakdown(profileId: string, from: string, to: string): Promise<TypeBreakdown[]> {
-  const { data } = await supabase
-    .from('session_completions')
-    .select('status, free_session_title, session:sessions(type)')
-    .eq('profile_id', profileId)
-    .in('status', ['done', 'free_session'])
-    .gte('completed_at', from)
-    .lt('completed_at', to)
+/** Breakdown of completed sessions by training type (VMA, endurance, côtes...) over [from, to), colored per session_types.color. */
+export async function fetchSessionTypeBreakdown(profileId: string, clubId: string, from: string, to: string): Promise<TypeBreakdown[]> {
+  const [{ data }, { data: types }] = await Promise.all([
+    supabase
+      .from('session_completions')
+      .select('status, free_session_title, session:sessions(type)')
+      .eq('profile_id', profileId)
+      .in('status', ['done', 'free_session'])
+      .gte('completed_at', from)
+      .lt('completed_at', to),
+    supabase.from('session_types').select('name, color').eq('club_id', clubId),
+  ])
+  const colorByName = new Map((types ?? []).map((t) => [t.name, t.color]))
   const counts = new Map<string, number>()
   for (const c of (data ?? []) as unknown as { status: string; free_session_title: string | null; session: { type: string } | null }[]) {
     const type = c.status === 'free_session' ? 'Séance libre' : (c.session?.type ?? 'Autre')
     counts.set(type, (counts.get(type) ?? 0) + 1)
   }
-  return [...counts.entries()].map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count)
+  return [...counts.entries()]
+    .map(([type, count]) => ({ type, count, color: type === 'Séance libre' ? FREE_SESSION_COLOR : (colorByName.get(type) ?? '#999') }))
+    .sort((a, b) => b.count - a.count)
 }
 export { TYPE_COLORS }
 

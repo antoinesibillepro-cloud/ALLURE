@@ -45,7 +45,7 @@ export function DonutChart({ segments, weightBy = 'sessions' }: { segments: Disc
 }
 
 /** Generic donut chart for any {label, count} breakdown, colors assigned from a fixed palette in order. */
-export function GenericDonutChart({ segments, colors, unitLabel = 'séances' }: { segments: { label: string; count: number }[]; colors: string[]; unitLabel?: string }) {
+export function GenericDonutChart({ segments, colors, unitLabel = 'séances' }: { segments: { label: string; count: number; color?: string }[]; colors: string[]; unitLabel?: string }) {
   const R = 64, CX = 80, CY = 80, STROKE = 22
   const circ = 2 * Math.PI * R
   const total = segments.reduce((s, d) => s + d.count, 0)
@@ -53,7 +53,7 @@ export function GenericDonutChart({ segments, colors, unitLabel = 'séances' }: 
   const segs = segments.map((s, i) => {
     const pct = total > 0 ? s.count / total : 0
     const dash = pct * circ
-    const seg = { ...s, color: colors[i % colors.length], dash: Math.max(dash - 3, 0), offset: acc, pct: Math.round(pct * 100) }
+    const seg = { ...s, color: s.color ?? colors[i % colors.length], dash: Math.max(dash - 3, 0), offset: acc, pct: Math.round(pct * 100) }
     acc += dash
     return seg
   })

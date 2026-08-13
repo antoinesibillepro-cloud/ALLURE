@@ -167,3 +167,22 @@ export async function fetchWeeklyLoad(profileId: string, weeks = 8): Promise<{ l
   }
   return results
 }
+
+export interface ACWRWeek { label: string; acute: number; chronic: number }
+export interface ACWRResult { acuteLoad: number; chronicLoad: number; ratio: number; weeks: ACWRWeek[] }
+
+/** Acute:Chronic Workload Ratio — acute = this week's load, chronic = 4-week rolling average load. */
+export async function fetchACWR(profileId: string): Promise<ACWRResult> {
+  const weeklyLoad = await fetchWeeklyLoad(profileId, 8)
+  const weeks: ACWRWeek[] = []
+  for (let i = 4; i < weeklyLoad.length; i++) {
+    const acute = weeklyLoad[i].load
+    const chronicWindow = weeklyLoad.slice(Math.max(0, i - 3), i + 1)
+    const chronic = chronicWindow.reduce((s, w) => s + w.load, 0) / chronicWindow.length
+    const offset = weeklyLoad.length - 1 - i
+    weeks.push({ label: offset === 0 ? 'Sem.' : `S-${offset}`, acute, chronic })
+  }
+  const current = weeks[weeks.length - 1]
+  const ratio = current.chronic > 0 ? current.acute / current.chronic : 0
+  return { acuteLoad: current.acute, chronicLoad: Math.round(current.chronic), ratio, weeks }
+}

@@ -905,18 +905,21 @@ export type Database = {
       session_types: {
         Row: {
           club_id: string
+          color: string
           created_at: string
           id: string
           name: string
         }
         Insert: {
           club_id: string
+          color?: string
           created_at?: string
           id?: string
           name: string
         }
         Update: {
           club_id?: string
+          color?: string
           created_at?: string
           id?: string
           name?: string

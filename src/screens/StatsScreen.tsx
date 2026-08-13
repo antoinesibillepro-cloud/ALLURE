@@ -117,7 +117,7 @@ export default function StatsScreen() {
     [profile?.id],
   )
   const { data: typeBreakdown } = useQuery<TypeBreakdown[]>(
-    () => (profile ? fetchSessionTypeBreakdown(profile.id, monthAgo, new Date().toISOString()) : Promise.resolve([])),
+    () => (profile ? fetchSessionTypeBreakdown(profile.id, profile.club_id, monthAgo, new Date().toISOString()) : Promise.resolve([])),
     [profile?.id],
   )
   const { data: disciplineTotals } = useQuery<DisciplineTotal[]>(
@@ -341,7 +341,7 @@ export default function StatsScreen() {
             {!typeBreakdown?.length ? (
               <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Aucune séance enregistrée sur les 30 derniers jours.</p>
             ) : (
-              <GenericDonutChart segments={typeBreakdown.map((t) => ({ label: t.type, count: t.count }))} colors={TYPE_COLORS} />
+              <GenericDonutChart segments={typeBreakdown.map((t) => ({ label: t.type, count: t.count, color: t.color }))} colors={TYPE_COLORS} />
             )}
           </Card>
 

@@ -9,7 +9,8 @@ import {
 } from '../../lib/queries/clubAdmin'
 import { fetchGroups, type GroupWithMembers } from '../../lib/queries/groups'
 import {
-  fetchSessionTypes, createSessionType, renameSessionType, deleteSessionType, type SessionTypeRow,
+  fetchSessionTypes, createSessionType, renameSessionType, deleteSessionType, updateSessionTypeColor,
+  SESSION_TYPE_PALETTE, type SessionTypeRow,
 } from '../../lib/queries/sessionTypes'
 
 function randomPassword(): string {
@@ -39,6 +40,7 @@ export default function CoachAdmin() {
   )
   const [newTypeName, setNewTypeName] = useState('')
   const [savingType, setSavingType] = useState(false)
+  const [colorPickerId, setColorPickerId] = useState<string | null>(null)
 
   const [clubName, setClubName] = useState('')
   const [savingName, setSavingName] = useState(false)
@@ -114,6 +116,12 @@ export default function CoachAdmin() {
 
   async function handleDeleteSessionType(id: string) {
     await deleteSessionType(id)
+    await refetchSessionTypes()
+  }
+
+  async function handleColorChange(id: string, color: string) {
+    await updateSessionTypeColor(id, color)
+    setColorPickerId(null)
     await refetchSessionTypes()
   }
 
@@ -302,12 +310,23 @@ export default function CoachAdmin() {
         <SectionLabel>Types de séance</SectionLabel>
         <div className="flex flex-wrap gap-2 mt-2 mb-3">
           {sessionTypes?.map((t) => (
-            <div key={t.id} className="flex items-center gap-1.5 rounded-full pl-3 pr-1.5 py-1" style={{ background: 'var(--surface2)' }}>
+            <div key={t.id} className="relative flex items-center gap-1.5 rounded-full pl-2 pr-1.5 py-1" style={{ background: 'var(--surface2)' }}>
+              <button onClick={() => setColorPickerId(colorPickerId === t.id ? null : t.id)}
+                className="w-4 h-4 rounded-full shrink-0" style={{ background: t.color }} />
               <input defaultValue={t.name} onBlur={(e) => handleRenameSessionType(t.id, e.target.value)}
                 className="text-xs font-semibold bg-transparent outline-none" style={{ color: 'var(--text-1)', width: `${Math.max(t.name.length, 4)}ch` }} />
               <button onClick={() => handleDeleteSessionType(t.id)} className="w-4 h-4 rounded-full flex items-center justify-center" style={{ color: 'var(--text-2)' }}>
                 <svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
               </button>
+              {colorPickerId === t.id && (
+                <div className="absolute top-full left-0 mt-1.5 z-10 rounded-xl p-2 grid grid-cols-5 gap-1.5"
+                  style={{ background: 'var(--card)', boxShadow: 'var(--card-shadow)', border: '1px solid var(--border)' }}>
+                  {SESSION_TYPE_PALETTE.map((c) => (
+                    <button key={c} onClick={() => handleColorChange(t.id, c)}
+                      className="w-5 h-5 rounded-full shrink-0" style={{ background: c, outline: t.color === c ? '2px solid var(--text-1)' : 'none', outlineOffset: 1 }} />
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -30,6 +30,12 @@ export default function MessagingScreen() {
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
   useEffect(() => {
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prevOverflow }
+  }, [])
+
+  useEffect(() => {
     if (!activeConvId) return
     return subscribeToConversation(activeConvId, () => { refetchMessages(); refetchConvs() })
     // eslint-disable-next-line react-hooks/exhaustive-deps
