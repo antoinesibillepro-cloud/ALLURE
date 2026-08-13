@@ -180,6 +180,64 @@ export async function fetchAthleteVigilance(clubId: string): Promise<VigilanceAt
   return results.sort((x, y) => order[x.status] - order[y.status])
 }
 
+export interface WeeklyFillAthlete {
+  id: string
+  name: string
+  email: string | null
+  planned: number
+  done: number
+  pendingTitles: string[]
+}
+
+/** Per-athlete published-session fill status for the current week — who's validated their sessions and who hasn't. */
+export async function fetchWeeklyFillStatus(clubId: string): Promise<WeeklyFillAthlete[]> {
+  const weekStart = isoDate(startOfWeek(new Date()))
+  const weekEnd = isoDate(new Date(startOfWeek(new Date()).getTime() + 7 * 24 * 3600 * 1000))
+
+  const { data: athletes } = await supabase.from('profiles').select('id, name, email').eq('club_id', clubId).eq('role', 'athlete')
+  if (!athletes?.length) return []
+
+  const { data: groups } = await supabase.from('groups').select('id').eq('club_id', clubId)
+  const groupIds = (groups ?? []).map((g) => g.id)
+  if (!groupIds.length) return athletes.map((a) => ({ id: a.id, name: a.name, email: a.email, planned: 0, done: 0, pendingTitles: [] }))
+
+  const { data: memberships } = await supabase.from('group_members').select('profile_id, group_id').in('group_id', groupIds)
+  const groupsByProfile = new Map<string, string[]>()
+  for (const m of memberships ?? []) groupsByProfile.set(m.profile_id, [...(groupsByProfile.get(m.profile_id) ?? []), m.group_id])
+
+  const { data: assignments } = await supabase.from('session_assignments').select('session_id, group_id').in('group_id', groupIds)
+  const sessionsByGroup = new Map<string, string[]>()
+  for (const a of assignments ?? []) sessionsByGroup.set(a.group_id, [...(sessionsByGroup.get(a.group_id) ?? []), a.session_id])
+  const allSessionIds = [...new Set((assignments ?? []).map((a) => a.session_id))]
+
+  const { data: weekSessions } = allSessionIds.length
+    ? await supabase.from('sessions').select('id, title').eq('status', 'published').in('id', allSessionIds).gte('scheduled_at', weekStart).lt('scheduled_at', weekEnd)
+    : { data: [] }
+  const weekSessionIds = new Set((weekSessions ?? []).map((s) => s.id))
+  const titleById = new Map((weekSessions ?? []).map((s) => [s.id, s.title]))
+
+  const athleteIds = athletes.map((a) => a.id)
+  const { data: completions } = weekSessionIds.size
+    ? await supabase.from('session_completions').select('profile_id, session_id').eq('status', 'done').in('profile_id', athleteIds).in('session_id', [...weekSessionIds])
+    : { data: [] }
+  const doneByProfile = new Map<string, Set<string>>()
+  for (const c of completions ?? []) {
+    if (!c.session_id) continue
+    const set = doneByProfile.get(c.profile_id) ?? new Set<string>()
+    set.add(c.session_id)
+    doneByProfile.set(c.profile_id, set)
+  }
+
+  return athletes.map((a) => {
+    const gids = groupsByProfile.get(a.id) ?? []
+    const assignedIds = new Set<string>()
+    for (const gid of gids) for (const sid of sessionsByGroup.get(gid) ?? []) if (weekSessionIds.has(sid)) assignedIds.add(sid)
+    const done = doneByProfile.get(a.id) ?? new Set<string>()
+    const pendingTitles = [...assignedIds].filter((sid) => !done.has(sid)).map((sid) => titleById.get(sid) ?? '').filter(Boolean)
+    return { id: a.id, name: a.name, email: a.email, planned: assignedIds.size, done: [...assignedIds].filter((sid) => done.has(sid)).length, pendingTitles }
+  }).sort((a, b) => (b.planned - b.done) - (a.planned - a.done))
+}
+
 export interface TopAthlete { name: string; groupName: string; km: number }
 
 export async function fetchTopAthletesThisWeek(clubId: string, limit = 5): Promise<TopAthlete[]> {

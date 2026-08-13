@@ -1,9 +1,14 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, SectionLabel, Avatar } from '../../components/ui'
 import { useApp } from '../../context/AppContext'
 import { useQuery } from '../../lib/useQuery'
-import { fetchGroupCompletionThisWeek, fetchClubActivityFeed, fetchClubKpis, fetchAthleteVigilance, type VigilanceAthlete } from '../../lib/queries/coachStats'
+import {
+  fetchGroupCompletionThisWeek, fetchClubActivityFeed, fetchClubKpis, fetchAthleteVigilance, fetchWeeklyFillStatus,
+  type VigilanceAthlete, type WeeklyFillAthlete,
+} from '../../lib/queries/coachStats'
 import { ensureWeeklyClubChallenge } from '../../lib/queries/community'
+import { sendMemberEmail } from '../../lib/queries/clubAdmin'
+import { fetchOrCreateDm, sendMessage } from '../../lib/queries/messages'
 
 const STATUS_LABEL: Record<VigilanceAthlete['status'], string> = { alerte: 'Alerte', attention: 'À surveiller', ok: 'En forme' }
 const STATUS_COLOR: Record<VigilanceAthlete['status'], string> = { alerte: '#E4574A', attention: '#F2C400', ok: '#5EBA65' }
@@ -17,6 +22,26 @@ export default function CoachDashboard() {
   const { data: feed } = useQuery(() => (clubId ? fetchClubActivityFeed(clubId) : Promise.resolve([])), [clubId])
   const { data: vigilance } = useQuery(() => (clubId ? fetchAthleteVigilance(clubId) : Promise.resolve([])), [clubId])
   const toWatch = (vigilance ?? []).filter((v) => v.status !== 'ok')
+  const { data: fillStatus } = useQuery(() => (clubId ? fetchWeeklyFillStatus(clubId) : Promise.resolve([])), [clubId])
+  const pendingAthletes = (fillStatus ?? []).filter((a) => a.planned > 0 && a.done < a.planned)
+  const [relancingId, setRelancingId] = useState<string | null>(null)
+  const [relancedIds, setRelancedIds] = useState<Set<string>>(new Set())
+
+  async function handleRelance(athlete: WeeklyFillAthlete) {
+    if (!profile) return
+    setRelancingId(athlete.id)
+    try {
+      const missing = athlete.planned - athlete.done
+      const body = `${athlete.name.split(' ')[0]}, tu as ${missing} séance${missing > 1 ? 's' : ''} de la semaine encore à valider (${athlete.pendingTitles.slice(0, 3).join(', ')}). Pense à rentrer tes chronos !`
+      await Promise.allSettled([
+        ...(athlete.email ? [sendMemberEmail(athlete.email, 'Séances à valider cette semaine', body)] : []),
+        fetchOrCreateDm(profile.club_id, profile.id, athlete.id).then((convoId) => sendMessage(convoId, profile.id, body)),
+      ])
+      setRelancedIds((prev) => new Set(prev).add(athlete.id))
+    } finally {
+      setRelancingId(null)
+    }
+  }
 
   useEffect(() => {
     if (clubId && profile) ensureWeeklyClubChallenge(clubId, profile.id).catch(() => {})
@@ -85,6 +110,46 @@ export default function CoachDashboard() {
           })}
         </div>
       )}
+
+      {/* Weekly fill status */}
+      <Card>
+        <div className="flex items-center justify-between mb-1">
+          <SectionLabel>Séances de la semaine — qui a rempli</SectionLabel>
+          {!!pendingAthletes.length && (
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: 'rgba(228,87,74,0.12)', color: '#E4574A' }}>
+              {pendingAthletes.length} à relancer
+            </span>
+          )}
+        </div>
+        {!fillStatus?.length ? (
+          <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Aucun athlète pour l&apos;instant.</p>
+        ) : !pendingAthletes.length ? (
+          <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Tout le monde a validé ses séances de la semaine.</p>
+        ) : (
+          <div className="space-y-0 mt-1">
+            {pendingAthletes.map((a) => (
+              <div key={a.id} className="flex items-center gap-3 py-2.5" style={{ borderBottom: '1px solid var(--border)' }}>
+                <Avatar initials={a.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()} size={36} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>{a.name}</p>
+                  <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-2)' }}>
+                    {a.done}/{a.planned} validées{a.pendingTitles.length ? ` · ${a.pendingTitles.slice(0, 2).join(', ')}` : ''}
+                  </p>
+                </div>
+                {relancedIds.has(a.id) ? (
+                  <span className="text-xs font-semibold shrink-0" style={{ color: '#5EBA65' }}>Relancé ✓</span>
+                ) : (
+                  <button onClick={() => handleRelance(a)} disabled={relancingId === a.id}
+                    className="text-xs font-bold px-3 py-1.5 rounded-full shrink-0 disabled:opacity-50 transition-transform active:scale-95"
+                    style={{ background: '#F2C400', color: '#0E0E0D' }}>
+                    {relancingId === a.id ? '…' : 'Relancer'}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
       {/* Vigilance */}
       <Card>

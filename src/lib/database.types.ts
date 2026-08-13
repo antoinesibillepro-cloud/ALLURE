@@ -223,6 +223,7 @@ export type Database = {
           event_date: string
           id: string
           location: string | null
+          race_type: string
           title: string
         }
         Insert: {
@@ -232,6 +233,7 @@ export type Database = {
           event_date: string
           id?: string
           location?: string | null
+          race_type?: string
           title: string
         }
         Update: {
@@ -241,6 +243,7 @@ export type Database = {
           event_date?: string
           id?: string
           location?: string | null
+          race_type?: string
           title?: string
         }
         Relationships: [
