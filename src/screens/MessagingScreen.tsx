@@ -3,6 +3,7 @@ import { Avatar, IconSearch } from '../components/ui'
 import { useApp } from '../context/AppContext'
 import { useQuery } from '../lib/useQuery'
 import { fetchConversations, fetchMessages, sendMessage, subscribeToConversation, leaveConversation, markConversationRead, type ConversationSummary } from '../lib/queries/messages'
+import { useVisualViewport } from '../lib/useVisualViewport'
 
 function initialsOf(name: string) {
   return name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
@@ -17,6 +18,7 @@ export default function MessagingScreen() {
   const [menuForId, setMenuForId] = useState<string | null>(null)
   const [leavingId, setLeavingId] = useState<string | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
+  const { height: vpHeight, keyboardOpen } = useVisualViewport()
 
   const { data: conversations, refetch: refetchConvs } = useQuery<ConversationSummary[]>(
     () => (profile ? fetchConversations(profile.id, profile.club_id) : Promise.resolve([])),
@@ -268,7 +270,8 @@ export default function MessagingScreen() {
   return (
     <>
       <style>{`@keyframes msgIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }`}</style>
-      <div className="md:hidden fixed inset-0 z-40 flex flex-col" style={{ background: 'var(--bg)', paddingBottom: '5.5rem' }}>
+      <div className="md:hidden fixed inset-x-0 top-0 z-40 flex flex-col"
+        style={{ background: 'var(--bg)', height: vpHeight, paddingBottom: keyboardOpen ? 0 : '5.5rem' }}>
         {mobileView === 'list' ? convList : convView}
       </div>
       <div className="hidden md:flex" style={{ height: 'calc(100vh - 3.5rem)' }}>
