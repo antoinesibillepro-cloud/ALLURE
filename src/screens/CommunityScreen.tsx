@@ -6,6 +6,7 @@ import { fetchChallenges, fetchChallengeLeaderboard, fetchWeeklyRankings, type C
 import { fetchClubActivityFeed, type ActivityItem } from '../lib/queries/coachStats'
 import { fetchBadgeDefinitions, fetchEarnedBadges, computeAndAwardBadges, type BadgeDef, type EarnedBadge } from '../lib/queries/badges'
 import AthleteDesktopSidebar from '../components/AthleteDesktopSidebar'
+import AthleteDesktopRail from '../components/AthleteDesktopRail'
 
 const KIND_LABEL: Record<string, string> = { km: 'km', sessions: 'séances', attendance: 'bilans' }
 
@@ -380,9 +381,10 @@ export default function CommunityScreen() {
       <div className="lg:hidden">{content}</div>
       <div className="hidden lg:block" style={{ background: 'var(--bg)' }}>
         <div className="max-w-[1320px] mx-auto px-4 py-6">
-          <div className="grid gap-5 items-start" style={{ gridTemplateColumns: '240px 1fr' }}>
+          <div className="grid gap-5 items-start" style={{ gridTemplateColumns: '240px 1fr 300px' }}>
             <AthleteDesktopSidebar />
             <div>{content}</div>
+            <AthleteDesktopRail />
           </div>
         </div>
       </div>

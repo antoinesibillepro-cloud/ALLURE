@@ -42,6 +42,10 @@ export interface StravaActivity {
   distance: number
   moving_time: number
   start_date: string
+  average_speed?: number
+  total_elevation_gain?: number
+  average_heartrate?: number
+  max_heartrate?: number
 }
 
 export async function fetchRecentActivities(accessToken: string, perPage = 30): Promise<StravaActivity[]> {

@@ -20,6 +20,7 @@ import CoachAdmin from './screens/coach/CoachAdmin'
 import CoachAthletes from './screens/coach/CoachAthletes'
 import CoachRaces from './screens/coach/CoachRaces'
 import GlobalSearch from './components/GlobalSearch'
+import CoachDesktopChrome from './components/CoachDesktopChrome'
 import NotificationBell from './components/NotificationBell'
 import type { SearchResult } from './lib/queries/search'
 
@@ -287,16 +288,18 @@ export default function App() {
       onOpenGroups={isCoach ? () => { setCScreen('groups'); setShowProfile(false) } : undefined}
       onOpenCommunity={isCoach ? () => { setCScreen('community'); setShowProfile(false) } : undefined} />
     if (isCoach) {
+      const openCommunity = () => setCScreen('community')
+      const openStats = () => setCScreen('clubstats')
       switch (cScreen) {
-        case 'dashboard': return <CoachDashboard onOpenCommunity={() => setCScreen('community')} onOpenStats={() => setCScreen('clubstats')} />
-        case 'groups':    return <CoachGroups />
-        case 'athletes':  return <CoachAthletes />
-        case 'sessions':  return <CoachSessions />
-        case 'community': return <CoachCommunity />
+        case 'dashboard': return <CoachDashboard onOpenCommunity={openCommunity} onOpenStats={openStats} />
+        case 'groups':    return <CoachDesktopChrome onOpenCommunity={openCommunity} onOpenStats={openStats}><CoachGroups /></CoachDesktopChrome>
+        case 'athletes':  return <CoachDesktopChrome onOpenCommunity={openCommunity} onOpenStats={openStats}><CoachAthletes /></CoachDesktopChrome>
+        case 'sessions':  return <CoachDesktopChrome onOpenCommunity={openCommunity} onOpenStats={openStats}><CoachSessions /></CoachDesktopChrome>
+        case 'community': return <CoachDesktopChrome onOpenCommunity={openCommunity} onOpenStats={openStats}><CoachCommunity /></CoachDesktopChrome>
         case 'messaging': return <CoachMessaging />
-        case 'clubstats': return <CoachStats />
-        case 'races':     return <CoachRaces />
-        case 'admin':     return <CoachAdmin />
+        case 'clubstats': return <CoachDesktopChrome onOpenCommunity={openCommunity} onOpenStats={openStats}><CoachStats /></CoachDesktopChrome>
+        case 'races':     return <CoachDesktopChrome onOpenCommunity={openCommunity} onOpenStats={openStats}><CoachRaces /></CoachDesktopChrome>
+        case 'admin':     return <CoachDesktopChrome onOpenCommunity={openCommunity} onOpenStats={openStats}><CoachAdmin /></CoachDesktopChrome>
       }
     }
     switch (aScreen) {

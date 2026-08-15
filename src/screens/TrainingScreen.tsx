@@ -4,7 +4,7 @@ import AddSessionSheet, { type SessionData } from '../components/AddSessionSheet
 import { useApp } from '../context/AppContext'
 import { useQuery } from '../lib/useQuery'
 import { fetchAthleteSessions, validateSession, logFreeSession, type AthleteSession } from '../lib/queries/sessions'
-import { fetchStravaStatus, connectStrava, syncStrava, fetchStravaActivities, type StravaActivity } from '../lib/queries/strava'
+import { fetchStravaStatus, connectStrava, syncStrava, fetchStravaActivities, fetchLinkedStravaActivityIds, type StravaActivity } from '../lib/queries/strava'
 import { fetchCompetitions, createCompetition, toggleCompetitionDone, deleteCompetition, updateVma, type Competition } from '../lib/queries/profileExtras'
 import { fetchCrossTrainingLogs, createCrossTrainingLog, updateCrossTrainingLog, deleteCrossTrainingLog, fetchWeeklyDisciplineKm, type CrossTrainingLog, type Discipline } from '../lib/queries/crossTraining'
 import { fetchAthleteRaces, type ClubRace, type RaceAssignment } from '../lib/queries/clubRaces'
@@ -243,6 +243,13 @@ export default function TrainingScreen() {
     () => (profile ? fetchStravaActivities(profile.id, 60) : Promise.resolve([])),
     [profile?.id],
   )
+  // Activities auto-linked to a coach-planned session (a sync means it was, in
+  // principle, actually done) — excluded below from the calendar so the same
+  // workout doesn't show up twice.
+  const { data: linkedStravaIds, refetch: refetchLinkedIds } = useQuery<Set<string>>(
+    () => (profile ? fetchLinkedStravaActivityIds(profile.id) : Promise.resolve(new Set<string>())),
+    [profile?.id],
+  )
   const stravaWeek = (stravaActivities ?? []).filter((a) => {
     const d = new Date(a.start_date).getTime()
     return d >= now.getTime() - 7 * 86400000
@@ -273,7 +280,7 @@ export default function TrainingScreen() {
     setSyncing(true)
     try {
       await syncStrava()
-      await Promise.all([refetchStravaActivities(), refetchStravaStatus()])
+      await Promise.all([refetchStravaActivities(), refetchStravaStatus(), refetchLinkedIds(), refetchMonth()])
     } finally {
       setSyncing(false)
     }
@@ -291,6 +298,7 @@ export default function TrainingScreen() {
     dayChips[day].push({ id: s.id, label: s.title, done: s.completion?.status === 'done', description: s.description, sessionId: s.id, source: 'session' })
   }
   for (const a of stravaActivities ?? []) {
+    if (linkedStravaIds?.has(a.id)) continue // already represented by its matched session chip
     const d = new Date(a.start_date)
     if (d < monthStart || d >= monthEnd) continue
     const day = d.getDate()
@@ -370,19 +378,41 @@ export default function TrainingScreen() {
                 </div>
               </div>
               <div className="space-y-2">
-                {stravaActivities.slice(0, 4).map((a) => (
-                  <div key={a.id} className="flex items-center justify-between py-1">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-1)' }}>{a.name}</p>
+                {stravaActivities.slice(0, 4).map((a) => {
+                  const linked = linkedStravaIds?.has(a.id)
+                  const paceStr = a.average_speed_ms
+                    ? (() => {
+                        const secPerKm = 1000 / a.average_speed_ms
+                        const m = Math.floor(secPerKm / 60)
+                        const s = Math.round(secPerKm % 60)
+                        return `${m}'${s.toString().padStart(2, '0')}"/km`
+                      })()
+                    : null
+                  return (
+                    <div key={a.id} className="py-1">
+                      <div className="flex items-center justify-between">
+                        <div className="min-w-0 flex items-center gap-1.5">
+                          <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-1)' }}>{a.name}</p>
+                          {linked && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0" style={{ background: 'rgba(94,186,101,0.15)', color: '#5EBA65' }}>
+                              liée à une séance
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm font-bold shrink-0 ml-2" style={{ color: 'var(--text-1)' }}>
+                          {(a.distance_m / 1000).toFixed(1)} km · {Math.round(a.moving_time_s / 60)} min
+                        </p>
+                      </div>
                       <p className="text-xs" style={{ color: 'var(--text-2)' }}>
                         {new Date(a.start_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} · {a.type}
+                        {paceStr ? ` · ${paceStr}` : ''}
+                        {a.total_elevation_gain_m ? ` · D+ ${Math.round(a.total_elevation_gain_m)}m` : ''}
+                        {a.average_heartrate ? ` · ${Math.round(a.average_heartrate)} bpm moy.` : ''}
+                        {a.max_heartrate ? ` (max ${Math.round(a.max_heartrate)})` : ''}
                       </p>
                     </div>
-                    <p className="text-sm font-bold shrink-0 ml-2" style={{ color: 'var(--text-1)' }}>
-                      {(a.distance_m / 1000).toFixed(1)} km · {Math.round(a.moving_time_s / 60)} min
-                    </p>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </>
           )}
