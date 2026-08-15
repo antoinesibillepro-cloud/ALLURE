@@ -27,23 +27,36 @@ function splitStr(kmh: number, m: number): string {
   const s = Math.round(sec % 60)
   return `${min}'${s.toString().padStart(2, '0')}"`
 }
-function raceTimeStr(kmh: number, km: number): string {
-  const totalSec = (km / kmh) * 3600
-  const h = Math.floor(totalSec / 3600)
-  const min = Math.floor((totalSec % 3600) / 60)
-  const s = Math.round(totalSec % 60)
-  if (h > 0) return `${h}h${min.toString().padStart(2, '0')}'${s.toString().padStart(2, '0')}"`
-  return `${min}'${s.toString().padStart(2, '0')}"`
+// Accepts "4:00", "4'00", "4'00\"", "1:04:00" (h:mm:ss) or a raw seconds number like "240".
+function parseTimeToSeconds(input: string): number | null {
+  const cleaned = input.trim().replace(/["']/g, ':').replace(/:+/g, ':').replace(/:$/, '')
+  if (!cleaned) return null
+  const parts = cleaned.split(':').filter(Boolean)
+  const nums = parts.map((p) => parseFloat(p.replace(',', '.')))
+  if (!nums.length || nums.some((n) => !Number.isFinite(n))) return null
+  if (nums.length === 1) return nums[0]
+  if (nums.length === 2) return nums[0] * 60 + nums[1]
+  if (nums.length === 3) return nums[0] * 3600 + nums[1] * 60 + nums[2]
+  return null
 }
 
-const RACE_MARKS = [
-  { label: '1500 m', km: 1.5, pct: 100 },
-  { label: '3000 m', km: 3, pct: 95 },
-  { label: '5000 m', km: 5, pct: 92 },
-  { label: '10 km', km: 10, pct: 88 },
-  { label: 'Semi-marathon', km: 21.097, pct: 84 },
-  { label: 'Marathon', km: 42.195, pct: 78 },
-]
+function formatClock(totalSeconds: number): string {
+  if (totalSeconds < 60) return `${totalSeconds.toFixed(1)}"`
+  const h = Math.floor(totalSeconds / 3600)
+  const m = Math.floor((totalSeconds % 3600) / 60)
+  const s = totalSeconds - h * 3600 - m * 60
+  const sStr = s.toFixed(1).padStart(4, '0')
+  if (h > 0) return `${h}h${m.toString().padStart(2, '0')}'${sStr}"`
+  return `${m}'${sStr}"`
+}
+
+const SPLIT_MARKS = [50, 100, 150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1500, 1600, 2000, 2500, 3000, 4000, 5000, 6000, 8000, 10000, 15000, 20000, 21097, 25000, 30000, 35000, 40000, 42195]
+
+function distanceLabel(m: number): string {
+  if (m % 1000 === 0) return `${m / 1000} km`
+  if (m >= 1000) return `${(m / 1000).toFixed(3).replace(/\.?0+$/, '')} km`
+  return `${m} m`
+}
 
 // ── data ─────────────────────────────────────────────────────────────────────
 type Chip = { id: string; label: string; done: boolean; description: string | null; sessionId: string | null; source: 'session' | 'strava' }
@@ -104,6 +117,8 @@ export default function TrainingScreen() {
   const [newExercise, setNewExercise] = useState('')
   const [newMax, setNewMax] = useState('')
   const [selectedExercise, setSelectedExercise] = useState<string | null>(null)
+  const [calcDistance, setCalcDistance] = useState('1500')
+  const [calcTime, setCalcTime] = useState('4:00')
 
   const { data: competitions, refetch: refetchCompetitions } = useQuery<Competition[]>(
     () => (profile ? fetchCompetitions(profile.id) : Promise.resolve([])),
@@ -871,21 +886,69 @@ export default function TrainingScreen() {
                 })}
               </div>
 
-              <p className="text-base font-bold mb-3 mt-6" style={{ color: 'var(--text-1)' }}>Repères de course</p>
-              <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-                <div className="grid text-[9px] font-bold uppercase tracking-wider px-3 py-2"
-                  style={{ gridTemplateColumns: '1fr 80px 90px', background: 'var(--surface2)', color: 'var(--text-2)' }}>
-                  <span>Distance</span><span className="text-right">% VMA typique</span><span className="text-right">Temps estimé</span>
+              <p className="text-base font-bold mb-3 mt-6" style={{ color: 'var(--text-1)' }}>Temps de passage</p>
+              <p className="text-xs mb-3" style={{ color: 'var(--text-2)' }}>
+                Entre une distance et un chrono cible pour connaître tes temps de passage intermédiaires.
+              </p>
+              <div className="flex gap-2 mb-4">
+                <div className="flex-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider block mb-1" style={{ color: 'var(--text-2)' }}>Distance (m)</label>
+                  <input value={calcDistance} onChange={(e) => setCalcDistance(e.target.value)} inputMode="decimal" placeholder="1500"
+                    className="w-full rounded-[10px] px-3 py-2.5 text-sm font-bold outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
                 </div>
-                {RACE_MARKS.map((r, i) => (
-                  <div key={r.label} className="grid items-center px-3 py-2.5 border-b last:border-b-0"
-                    style={{ gridTemplateColumns: '1fr 80px 90px', borderColor: 'var(--border)', background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)' }}>
-                    <span className="text-xs font-semibold" style={{ color: 'var(--text-1)' }}>{r.label}</span>
-                    <span className="text-xs text-right" style={{ color: 'var(--text-2)' }}>{r.pct}%</span>
-                    <span className="text-xs font-mono text-right font-bold" style={{ color: '#F2C400' }}>{raceTimeStr((r.pct / 100) * vma, r.km)}</span>
-                  </div>
-                ))}
+                <div className="flex-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider block mb-1" style={{ color: 'var(--text-2)' }}>Chrono cible</label>
+                  <input value={calcTime} onChange={(e) => setCalcTime(e.target.value)} placeholder="4:00"
+                    className="w-full rounded-[10px] px-3 py-2.5 text-sm font-bold outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+                </div>
               </div>
+
+              {(() => {
+                const distanceM = parseFloat(calcDistance.replace(',', '.'))
+                const totalSec = parseTimeToSeconds(calcTime)
+                const valid = Number.isFinite(distanceM) && distanceM > 0 && totalSec !== null && totalSec > 0
+                if (!valid) {
+                  return <p className="text-sm py-3" style={{ color: 'var(--text-2)' }}>Renseigne une distance et un chrono valides.</p>
+                }
+                const speedKmh = (distanceM / totalSec!) * 3.6
+                const marks = [...SPLIT_MARKS.filter((m) => m < distanceM), distanceM]
+                return (
+                  <>
+                    <div className="flex items-center gap-4 mb-3 px-1">
+                      <span className="text-xs" style={{ color: 'var(--text-2)' }}>
+                        Allure <span className="font-bold font-mono" style={{ color: 'var(--text-1)' }}>{paceStr(speedKmh)}/km</span>
+                      </span>
+                      <span className="text-xs" style={{ color: 'var(--text-2)' }}>
+                        Vitesse <span className="font-bold font-mono" style={{ color: 'var(--text-1)' }}>{speedKmh.toFixed(2)} km/h</span>
+                      </span>
+                    </div>
+                    <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                      <div className="grid text-[9px] font-bold uppercase tracking-wider px-3 py-2"
+                        style={{ gridTemplateColumns: '1fr 110px', background: 'var(--surface2)', color: 'var(--text-2)' }}>
+                        <span>Distance</span><span className="text-right">Temps de passage</span>
+                      </div>
+                      {marks.map((m, i) => {
+                        const isFinal = m === distanceM
+                        const cumSec = (m / distanceM) * totalSec!
+                        return (
+                          <div key={m} className="grid items-center px-3 py-2.5 border-b last:border-b-0"
+                            style={{
+                              gridTemplateColumns: '1fr 110px', borderColor: 'var(--border)',
+                              background: isFinal ? 'rgba(242,196,0,0.08)' : i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)',
+                            }}>
+                            <span className="text-xs font-semibold" style={{ color: isFinal ? '#F2C400' : 'var(--text-1)' }}>
+                              {distanceLabel(m)}{isFinal ? ' — arrivée' : ''}
+                            </span>
+                            <span className="text-xs font-mono text-right font-bold" style={{ color: isFinal ? '#F2C400' : 'var(--text-1)' }}>
+                              {formatClock(cumSec)}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </>
+                )
+              })()}
             </>
           ) : (
             <>
