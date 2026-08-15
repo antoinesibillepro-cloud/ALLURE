@@ -96,8 +96,160 @@ type CoachSessionRow = {
   id: string; title: string; type: string; description: string | null
   discipline: SessionDiscipline
   duration_min: number | null; distance_km: number | null; vma_percent: number | null
-  scheduled_at: string; status: string
+  scheduled_at: string; status: string; time_slot: string | null
   session_assignments: { group_id: string; groups: { name: string } | null }[]
+}
+
+const TIME_SLOT_LABEL: Record<string, string> = { matin: 'Matin', 'apres-midi': 'Ap.-midi' }
+
+function isoDateOf(d: Date) { return d.toISOString().slice(0, 10) }
+
+/**
+ * Month overview of every session already scheduled — filterable by group,
+ * click a day to see/edit what's on it or jump into the create form with
+ * that date pre-filled. Mirrors the day-grid pattern already used for the
+ * races calendar, but shows session titles in-cell since sessions are dense
+ * (most weekdays have one) rather than sparse dots.
+ */
+function SessionCalendarView({
+  sessions, groups, sessionTypes, selectedDate, onSelectDate, groupFilter, onGroupFilterChange, onAddOnDate, onChanged, clubId, coachId,
+}: {
+  sessions: CoachSessionRow[]
+  groups: GroupWithMembers[]
+  sessionTypes: SessionTypeRow[]
+  selectedDate: string | null
+  onSelectDate: (iso: string) => void
+  groupFilter: string
+  onGroupFilterChange: (id: string) => void
+  onAddOnDate: (iso: string) => void
+  onChanged: () => void
+  clubId: string
+  coachId: string
+}) {
+  const [monthOffset, setMonthOffset] = useState(0)
+  const base = new Date()
+  const viewMonth = new Date(base.getFullYear(), base.getMonth() + monthOffset, 1)
+  const monthLabel = viewMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+  const daysInMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0).getDate()
+  const startOffset = (viewMonth.getDay() + 6) % 7
+  const cells: Array<number | null> = []
+  for (let i = 0; i < startOffset; i++) cells.push(null)
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+  function dayIso(d: number) {
+    return `${viewMonth.getFullYear()}-${String(viewMonth.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  }
+  const todayIso = isoDateOf(base)
+
+  function colorOf(s: CoachSessionRow) { return sessionTypes.find((t) => t.name === s.type)?.color ?? '#F2C400' }
+  const visibleSessions = groupFilter
+    ? sessions.filter((s) => s.session_assignments.some((a) => a.group_id === groupFilter))
+    : sessions
+
+  const byDay = new Map<string, CoachSessionRow[]>()
+  for (const s of visibleSessions) {
+    const key = s.scheduled_at.slice(0, 10)
+    byDay.set(key, [...(byDay.get(key) ?? []), s])
+  }
+
+  const daySessions = selectedDate ? (byDay.get(selectedDate) ?? []) : []
+
+  return (
+    <>
+      {/* Group filter */}
+      <div className="flex flex-wrap gap-2">
+        <button onClick={() => onGroupFilterChange('')}
+          className="px-3 py-1.5 rounded-[12px] text-xs font-bold transition-all"
+          style={{ background: !groupFilter ? '#F2C400' : 'var(--surface2)', color: !groupFilter ? '#0E0E0D' : 'var(--text-2)' }}>
+          Tous
+        </button>
+        {groups.map((g) => (
+          <button key={g.id} onClick={() => onGroupFilterChange(g.id)}
+            className="px-3 py-1.5 rounded-[12px] text-xs font-bold transition-all"
+            style={{ background: groupFilter === g.id ? '#F2C400' : 'var(--surface2)', color: groupFilter === g.id ? '#0E0E0D' : 'var(--text-2)' }}>
+            {g.name}
+          </button>
+        ))}
+      </div>
+
+      <Card className="!p-4">
+        <div className="flex items-center justify-between mb-4">
+          <button onClick={() => setMonthOffset((m) => m - 1)} className="w-7 h-7 rounded-full flex items-center justify-center transition-transform active:scale-90" style={{ background: 'var(--surface2)' }}>
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M7.5 9L4.5 6L7.5 3" stroke="var(--text-2)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-bold capitalize" style={{ color: 'var(--text-1)' }}>{monthLabel}</p>
+            {monthOffset !== 0 && (
+              <button onClick={() => setMonthOffset(0)} className="text-[10px] font-bold px-2 py-1 rounded-full" style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
+                Aujourd'hui
+              </button>
+            )}
+          </div>
+          <button onClick={() => setMonthOffset((m) => m + 1)} className="w-7 h-7 rounded-full flex items-center justify-center transition-transform active:scale-90" style={{ background: 'var(--surface2)' }}>
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M4.5 3L7.5 6L4.5 9" stroke="var(--text-2)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+        </div>
+        <div className="grid grid-cols-7 mb-1">
+          {['LU', 'MA', 'ME', 'JE', 'VE', 'SA', 'DI'].map((d, i) => (
+            <div key={i} className="text-center text-[9px] font-bold tracking-widest py-0.5" style={{ color: 'var(--text-2)' }}>{d}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {cells.map((d, i) => {
+            if (!d) return <div key={`e-${i}`} />
+            const di = dayIso(d)
+            const items = byDay.get(di) ?? []
+            const isSelected = di === selectedDate
+            const isToday = di === todayIso
+            return (
+              <button key={d} onClick={() => onSelectDate(di)}
+                className="flex flex-col items-start rounded-xl p-1 text-left transition-all overflow-hidden"
+                style={{
+                  minHeight: 68,
+                  background: isSelected ? 'rgba(242,196,0,0.14)' : 'var(--surface2)',
+                  outline: isSelected ? '1.5px solid #F2C400' : isToday ? '1px solid rgba(242,196,0,0.4)' : 'none',
+                }}>
+                <span className="text-[10px] font-bold px-0.5 mb-0.5" style={{ color: isToday ? '#F2C400' : 'var(--text-1)' }}>{d}</span>
+                <div className="w-full space-y-0.5">
+                  {items.slice(0, 2).map((s) => (
+                    <div key={s.id} className="text-[8px] leading-tight px-1 py-0.5 rounded truncate" style={{ background: `${colorOf(s)}22`, color: colorOf(s), borderLeft: `2px solid ${colorOf(s)}` }}>
+                      {s.time_slot && <span className="font-bold uppercase mr-1">{TIME_SLOT_LABEL[s.time_slot]}</span>}
+                      {s.title}
+                    </div>
+                  ))}
+                  {items.length > 2 && (
+                    <div className="text-[8px] px-1" style={{ color: 'var(--text-2)' }}>+{items.length - 2}</div>
+                  )}
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </Card>
+
+      {selectedDate && (
+        <Card>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-bold capitalize" style={{ color: 'var(--text-1)' }}>
+              {new Date(selectedDate).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </p>
+            <button onClick={() => onAddOnDate(selectedDate)}
+              className="text-xs font-bold px-3 py-1.5 rounded-full" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+              + Ajouter
+            </button>
+          </div>
+          {!daySessions.length ? (
+            <p className="text-sm text-center py-4" style={{ color: 'var(--text-2)' }}>Rien ce jour-là.</p>
+          ) : (
+            <div className="space-y-2">
+              {daySessions.map((s) => (
+                <SessionLibraryRow key={s.id} session={s} onChanged={onChanged} clubId={clubId} coachId={coachId} color={colorOf(s)} />
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+    </>
+  )
 }
 
 function SessionLibraryRow({ session, onChanged, clubId, coachId, color }: { session: CoachSessionRow; onChanged: () => void; clubId: string; coachId: string; color: string }) {
@@ -291,7 +443,10 @@ interface SubgroupBlockState {
 
 export default function CoachSessions() {
   const { profile } = useApp()
-  const [tab, setTab] = useState<'create' | 'library'>('create')
+  const [tab, setTab] = useState<'calendar' | 'create' | 'library'>('calendar')
+  const [calMonthOffset, setCalMonthOffset] = useState(0)
+  const [calSelectedDate, setCalSelectedDate] = useState<string | null>(null)
+  const [calGroupFilter, setCalGroupFilter] = useState<string>('')
   const [sessionType, setSessionType] = useState('')
   const [discipline, setDiscipline] = useState<SessionDiscipline>('course')
   const [duration, setDuration] = useState(55)
@@ -333,7 +488,7 @@ export default function CoachSessions() {
   }
 
   const { data: coachSessions, refetch: refetchCoachSessions } = useQuery<CoachSessionRow[]>(
-    () => (profile && tab === 'library' ? (fetchCoachSessions(profile.club_id) as unknown as Promise<CoachSessionRow[]>) : Promise.resolve([])),
+    () => (profile && (tab === 'library' || tab === 'calendar') ? (fetchCoachSessions(profile.club_id) as unknown as Promise<CoachSessionRow[]>) : Promise.resolve([])),
     [profile?.club_id, tab],
   )
 
@@ -399,16 +554,32 @@ export default function CoachSessions() {
         <h1 className="text-2xl font-black" style={{ color: 'var(--text-1)' }}>Séances</h1>
         <div className="flex items-center gap-2">
           <div className="flex gap-1 p-1 rounded-[12px]" style={{ background: 'var(--card)', boxShadow: 'var(--card-shadow)' }}>
-            {(['create', 'library'] as const).map((t) => (
+            {(['calendar', 'create', 'library'] as const).map((t) => (
               <button key={t} onClick={() => setTab(t)}
                 className="px-3 py-1.5 rounded-[10px] text-xs font-bold transition-all capitalize"
                 style={{ background: tab === t ? '#F2C400' : 'transparent', color: tab === t ? '#0E0E0D' : 'var(--text-2)' }}>
-                {t === 'create' ? 'Créer' : 'Bibliothèque'}
+                {t === 'calendar' ? 'Calendrier' : t === 'create' ? 'Créer' : 'Bibliothèque'}
               </button>
             ))}
           </div>
         </div>
       </div>
+
+      {tab === 'calendar' && profile && (
+        <SessionCalendarView
+          sessions={coachSessions ?? []}
+          groups={topGroups}
+          sessionTypes={sessionTypes ?? []}
+          selectedDate={calSelectedDate}
+          onSelectDate={setCalSelectedDate}
+          groupFilter={calGroupFilter}
+          onGroupFilterChange={setCalGroupFilter}
+          onAddOnDate={(iso) => { setScheduledDate(iso); setTab('create') }}
+          onChanged={refetchCoachSessions}
+          clubId={profile.club_id}
+          coachId={profile.id}
+        />
+      )}
 
       {tab === 'create' && (
         <>

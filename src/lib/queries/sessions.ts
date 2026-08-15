@@ -209,7 +209,7 @@ export async function logFreeSession(profileId: string, title: string, distanceK
 export async function fetchCoachSessions(clubId: string) {
   const { data, error } = await supabase
     .from('sessions')
-    .select('id, title, type, description, discipline, duration_min, distance_km, vma_percent, scheduled_at, status, session_assignments(group_id, groups(name))')
+    .select('id, title, type, description, discipline, duration_min, distance_km, vma_percent, scheduled_at, status, time_slot, session_assignments(group_id, groups(name))')
     .eq('club_id', clubId)
     .order('scheduled_at', { ascending: false })
   if (error) throw error
