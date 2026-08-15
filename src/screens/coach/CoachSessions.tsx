@@ -60,23 +60,73 @@ function MiniCalendar({ value, onChange }: { value: string; onChange: (iso: stri
   )
 }
 
-function TargetSplitsEditor({ splits, onChange }: { splits: string[]; onChange: (splits: string[]) => void }) {
+type TargetSplitDraft = { target_time_seconds: number; distance_m: number | null; recovery_seconds: number | null }
+
+function parseTimeToSeconds(v: string): number | null {
+  const t = v.trim()
+  if (!t) return null
+  if (t.includes(':')) {
+    const [m, s] = t.split(':').map((p) => parseFloat(p.replace(',', '.')))
+    if (Number.isNaN(m) || Number.isNaN(s)) return null
+    return m * 60 + s
+  }
+  const n = parseFloat(t.replace(',', '.'))
+  return Number.isNaN(n) ? null : n
+}
+
+/** Compact reps × distance → objectif + récup input (façon feuille de coach), qui s'étend en N répétitions au clic. */
+function ChronoObjectivesEditor({ splits, onChange }: { splits: TargetSplitDraft[]; onChange: (splits: TargetSplitDraft[]) => void }) {
+  const [reps, setReps] = useState('4')
+  const [distance, setDistance] = useState('')
+  const [target, setTarget] = useState('')
+  const [recovery, setRecovery] = useState('90')
+
+  function addBlock() {
+    const n = parseInt(reps, 10)
+    const timeSec = parseTimeToSeconds(target)
+    if (!n || n <= 0 || !timeSec) return
+    const distM = distance.trim() ? parseFloat(distance.replace(',', '.')) : null
+    const recSec = recovery.trim() ? parseTimeToSeconds(recovery) : null
+    const added: TargetSplitDraft[] = Array.from({ length: n }, () => ({
+      target_time_seconds: timeSec, distance_m: Number.isNaN(distM as number) ? null : distM, recovery_seconds: recSec,
+    }))
+    onChange([...splits, ...added])
+    setTarget('')
+  }
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-1.5">
-        <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>Chronos cibles par répétition (optionnel)</p>
-        <button type="button" onClick={() => onChange([...splits, ''])} className="text-xs font-bold" style={{ color: '#F2C400' }}>+ Ajouter</button>
+      <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-2)' }}>Objectifs de chrono (optionnel)</p>
+      <div className="grid grid-cols-4 gap-1.5 mb-1.5">
+        <div>
+          <span className="text-[9px] font-semibold" style={{ color: 'var(--text-2)' }}>Rép.</span>
+          <input value={reps} onChange={(e) => setReps(e.target.value)} inputMode="numeric" placeholder="4"
+            className="w-full px-2 py-1.5 rounded-[10px] text-sm outline-none mt-0.5" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+        </div>
+        <div>
+          <span className="text-[9px] font-semibold" style={{ color: 'var(--text-2)' }}>Distance (m)</span>
+          <input value={distance} onChange={(e) => setDistance(e.target.value)} inputMode="decimal" placeholder="400"
+            className="w-full px-2 py-1.5 rounded-[10px] text-sm outline-none mt-0.5" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+        </div>
+        <div>
+          <span className="text-[9px] font-semibold" style={{ color: 'var(--text-2)' }}>Objectif</span>
+          <input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="1:30 ou 90"
+            className="w-full px-2 py-1.5 rounded-[10px] text-sm outline-none mt-0.5" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+        </div>
+        <div>
+          <span className="text-[9px] font-semibold" style={{ color: 'var(--text-2)' }}>Récup.</span>
+          <input value={recovery} onChange={(e) => setRecovery(e.target.value)} placeholder="90"
+            className="w-full px-2 py-1.5 rounded-[10px] text-sm outline-none mt-0.5" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+        </div>
       </div>
+      <button type="button" onClick={addBlock} className="text-xs font-bold mb-2" style={{ color: '#F2C400' }}>+ Ajouter le bloc</button>
       {splits.length > 0 && (
-        <div className="space-y-1.5">
+        <div className="flex flex-wrap gap-1.5">
           {splits.map((s, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <span className="text-xs w-14 shrink-0" style={{ color: 'var(--text-2)' }}>Rép. {i + 1}</span>
-              <input value={s} onChange={(e) => onChange(splits.map((v, j) => j === i ? e.target.value : v))}
-                placeholder="secondes" inputMode="decimal"
-                className="flex-1 px-3 py-1.5 rounded-[10px] text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
-              <button type="button" onClick={() => onChange(splits.filter((_, j) => j !== i))} className="text-xs" style={{ color: '#E4574A' }}>×</button>
-            </div>
+            <span key={i} className="text-[11px] font-mono px-2 py-1 rounded-lg flex items-center gap-1.5" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
+              #{i + 1}{s.distance_m ? ` ${s.distance_m}m` : ''} {s.target_time_seconds}s{s.recovery_seconds ? ` · r${s.recovery_seconds}s` : ''}
+              <button type="button" onClick={() => onChange(splits.filter((_, j) => j !== i))} style={{ color: '#E4574A' }}>×</button>
+            </span>
           ))}
         </div>
       )}
@@ -127,6 +177,10 @@ function SessionCalendarView({
   coachId: string
 }) {
   const [monthOffset, setMonthOffset] = useState(0)
+  const [weekOffset, setWeekOffset] = useState(0)
+  const [viewMode, setViewMode] = useState<'month' | 'week'>('month')
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dropDay, setDropDay] = useState<string | null>(null)
   const base = new Date()
   const viewMonth = new Date(base.getFullYear(), base.getMonth() + monthOffset, 1)
   const monthLabel = viewMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
@@ -153,41 +207,106 @@ function SessionCalendarView({
 
   const daySessions = selectedDate ? (byDay.get(selectedDate) ?? []) : []
 
+  const topLevel = groups.filter((g) => !g.parent_group_id)
+  const groupLabel = groups.find((g) => g.id === groupFilter)?.name
+
+  const weekAnchor = new Date(base)
+  weekAnchor.setDate(weekAnchor.getDate() + weekOffset * 7)
+  const weekDayIdx = (weekAnchor.getDay() + 6) % 7
+  const weekStart = new Date(weekAnchor)
+  weekStart.setDate(weekAnchor.getDate() - weekDayIdx)
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(weekStart)
+    d.setDate(weekStart.getDate() + i)
+    return d
+  })
+  const weekLabel = `${weekDays[0].toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} – ${weekDays[6].toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}`
+
+  async function handleDropOnDay(sessionId: string, newDateIso: string) {
+    const s = sessions.find((x) => x.id === sessionId)
+    setDragId(null)
+    setDropDay(null)
+    if (!s) return
+    const oldDate = new Date(s.scheduled_at)
+    if (isoDateOf(oldDate) === newDateIso) return
+    const [y, m, d] = newDateIso.split('-').map(Number)
+    const newDate = new Date(oldDate)
+    newDate.setFullYear(y, m - 1, d)
+    await updateSession(sessionId, { scheduled_at: newDate.toISOString() })
+    onChanged()
+  }
+
   return (
     <>
-      {/* Group filter */}
-      <div className="flex flex-wrap gap-2">
-        <button onClick={() => onGroupFilterChange('')}
-          className="px-3 py-1.5 rounded-[12px] text-xs font-bold transition-all"
-          style={{ background: !groupFilter ? '#F2C400' : 'var(--surface2)', color: !groupFilter ? '#0E0E0D' : 'var(--text-2)' }}>
-          Tous
-        </button>
-        {groups.map((g) => (
-          <button key={g.id} onClick={() => onGroupFilterChange(g.id)}
-            className="px-3 py-1.5 rounded-[12px] text-xs font-bold transition-all"
-            style={{ background: groupFilter === g.id ? '#F2C400' : 'var(--surface2)', color: groupFilter === g.id ? '#0E0E0D' : 'var(--text-2)' }}>
-            {g.name}
+      {/* Group filter — a group must be picked before the calendar is usable, to avoid targeting mistakes */}
+      <div className="flex flex-wrap items-center gap-2">
+        {!groupFilter && (
+          <span className="text-xs font-semibold mr-1" style={{ color: 'var(--text-2)' }}>Choisis un groupe :</span>
+        )}
+        {groupFilter && (
+          <button onClick={() => onGroupFilterChange('')}
+            className="px-3 py-1.5 rounded-[12px] text-xs font-bold flex items-center gap-1.5" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+            {groupLabel}
+            <svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M1 1L11 11M11 1L1 11" stroke="#0E0E0D" strokeWidth="1.8" strokeLinecap="round" /></svg>
           </button>
-        ))}
+        )}
+        {!groupFilter && topLevel.map((g) => {
+          const children = groups.filter((sg) => sg.parent_group_id === g.id)
+          return (
+            <div key={g.id} className="flex flex-wrap items-center gap-1.5">
+              <button onClick={() => onGroupFilterChange(g.id)}
+                className="px-3 py-1.5 rounded-[12px] text-xs font-bold transition-all" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
+                {g.name}
+              </button>
+              {children.map((sg) => (
+                <button key={sg.id} onClick={() => onGroupFilterChange(sg.id)}
+                  className="px-2.5 py-1.5 rounded-[12px] text-[11px] font-semibold transition-all" style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
+                  ↳ {sg.name}
+                </button>
+              ))}
+            </div>
+          )
+        })}
       </div>
 
+      {!groupFilter ? (
+        <Card>
+          <p className="text-sm text-center py-6" style={{ color: 'var(--text-2)' }}>
+            Sélectionne un groupe ci-dessus pour afficher son calendrier.
+          </p>
+        </Card>
+      ) : (
+      <>
       <Card className="!p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex rounded-full p-0.5" style={{ background: 'var(--surface2)' }}>
+            {(['month', 'week'] as const).map((mode) => (
+              <button key={mode} onClick={() => setViewMode(mode)}
+                className="text-[10px] font-bold px-2.5 py-1 rounded-full transition-all"
+                style={{ background: viewMode === mode ? '#F2C400' : 'transparent', color: viewMode === mode ? '#0E0E0D' : 'var(--text-2)' }}>
+                {mode === 'month' ? 'Mois' : 'Semaine'}
+              </button>
+            ))}
+          </div>
+          {((viewMode === 'month' && monthOffset !== 0) || (viewMode === 'week' && weekOffset !== 0)) && (
+            <button onClick={() => (viewMode === 'month' ? setMonthOffset(0) : setWeekOffset(0))}
+              className="text-[10px] font-bold px-2 py-1 rounded-full" style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
+              Aujourd'hui
+            </button>
+          )}
+        </div>
         <div className="flex items-center justify-between mb-4">
-          <button onClick={() => setMonthOffset((m) => m - 1)} className="w-7 h-7 rounded-full flex items-center justify-center transition-transform active:scale-90" style={{ background: 'var(--surface2)' }}>
+          <button onClick={() => (viewMode === 'month' ? setMonthOffset((m) => m - 1) : setWeekOffset((w) => w - 1))} className="w-7 h-7 rounded-full flex items-center justify-center transition-transform active:scale-90" style={{ background: 'var(--surface2)' }}>
             <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M7.5 9L4.5 6L7.5 3" stroke="var(--text-2)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-bold capitalize" style={{ color: 'var(--text-1)' }}>{monthLabel}</p>
-            {monthOffset !== 0 && (
-              <button onClick={() => setMonthOffset(0)} className="text-[10px] font-bold px-2 py-1 rounded-full" style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
-                Aujourd'hui
-              </button>
-            )}
-          </div>
-          <button onClick={() => setMonthOffset((m) => m + 1)} className="w-7 h-7 rounded-full flex items-center justify-center transition-transform active:scale-90" style={{ background: 'var(--surface2)' }}>
+          <p className="text-sm font-bold capitalize" style={{ color: 'var(--text-1)' }}>{viewMode === 'month' ? monthLabel : weekLabel}</p>
+          <button onClick={() => (viewMode === 'month' ? setMonthOffset((m) => m + 1) : setWeekOffset((w) => w + 1))} className="w-7 h-7 rounded-full flex items-center justify-center transition-transform active:scale-90" style={{ background: 'var(--surface2)' }}>
             <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M4.5 3L7.5 6L4.5 9" stroke="var(--text-2)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
         </div>
+
+        {viewMode === 'month' ? (
+        <>
         <div className="grid grid-cols-7 mb-1">
           {['LU', 'MA', 'ME', 'JE', 'VE', 'SA', 'DI'].map((d, i) => (
             <div key={i} className="text-center text-[9px] font-bold tracking-widest py-0.5" style={{ color: 'var(--text-2)' }}>{d}</div>
@@ -201,17 +320,27 @@ function SessionCalendarView({
             const isSelected = di === selectedDate
             const isToday = di === todayIso
             return (
-              <button key={d} onClick={() => onSelectDate(di)}
-                className="flex flex-col items-start rounded-xl p-1 text-left transition-all overflow-hidden"
+              <div key={d} role="button" tabIndex={0} onClick={() => onSelectDate(di)}
+                onKeyDown={(e) => { if (e.key === 'Enter') onSelectDate(di) }}
+                onDragOver={(e) => { e.preventDefault(); setDropDay(di) }}
+                onDragLeave={() => setDropDay((v) => (v === di ? null : v))}
+                onDrop={(e) => { e.preventDefault(); if (dragId) handleDropOnDay(dragId, di) }}
+                className="group relative flex flex-col items-start rounded-xl p-1 text-left transition-all overflow-hidden cursor-pointer"
                 style={{
                   minHeight: 68,
-                  background: isSelected ? 'rgba(242,196,0,0.14)' : 'var(--surface2)',
-                  outline: isSelected ? '1.5px solid #F2C400' : isToday ? '1px solid rgba(242,196,0,0.4)' : 'none',
+                  background: dropDay === di ? 'rgba(242,196,0,0.22)' : isSelected ? 'rgba(242,196,0,0.14)' : 'var(--surface2)',
+                  outline: isSelected ? '1.5px solid #F2C400' : isToday ? '1px solid rgba(242,196,0,0.4)' : dropDay === di ? '1.5px dashed #F2C400' : 'none',
                 }}>
-                <span className="text-[10px] font-bold px-0.5 mb-0.5" style={{ color: isToday ? '#F2C400' : 'var(--text-1)' }}>{d}</span>
+                <div className="flex items-center justify-between w-full">
+                  <span className="text-[10px] font-bold px-0.5 mb-0.5" style={{ color: isToday ? '#F2C400' : 'var(--text-1)' }}>{d}</span>
+                  <button onClick={(e) => { e.stopPropagation(); onAddOnDate(di) }}
+                    className="w-3.5 h-3.5 rounded-full items-center justify-center text-[10px] font-bold leading-none hidden group-hover:flex"
+                    style={{ background: '#F2C400', color: '#0E0E0D' }}>+</button>
+                </div>
                 <div className="w-full space-y-0.5">
                   {items.slice(0, 2).map((s) => (
-                    <div key={s.id} className="text-[8px] leading-tight px-1 py-0.5 rounded truncate" style={{ background: `${colorOf(s)}22`, color: colorOf(s), borderLeft: `2px solid ${colorOf(s)}` }}>
+                    <div key={s.id} draggable onDragStart={(e) => { e.stopPropagation(); setDragId(s.id) }} onDragEnd={() => setDragId(null)}
+                      className="text-[8px] leading-tight px-1 py-0.5 rounded truncate cursor-grab" style={{ background: `${colorOf(s)}22`, color: colorOf(s), borderLeft: `2px solid ${colorOf(s)}` }}>
                       {s.time_slot && <span className="font-bold uppercase mr-1">{TIME_SLOT_LABEL[s.time_slot]}</span>}
                       {s.title}
                     </div>
@@ -220,10 +349,53 @@ function SessionCalendarView({
                     <div className="text-[8px] px-1" style={{ color: 'var(--text-2)' }}>+{items.length - 2}</div>
                   )}
                 </div>
-              </button>
+              </div>
             )
           })}
         </div>
+        </>
+        ) : (
+        <div className="grid grid-cols-7 gap-1">
+          {weekDays.map((wd) => {
+            const di = isoDateOf(wd)
+            const items = byDay.get(di) ?? []
+            const isSelected = di === selectedDate
+            const isToday = di === todayIso
+            return (
+              <div key={di} role="button" tabIndex={0} onClick={() => onSelectDate(di)}
+                onKeyDown={(e) => { if (e.key === 'Enter') onSelectDate(di) }}
+                onDragOver={(e) => { e.preventDefault(); setDropDay(di) }}
+                onDragLeave={() => setDropDay((v) => (v === di ? null : v))}
+                onDrop={(e) => { e.preventDefault(); if (dragId) handleDropOnDay(dragId, di) }}
+                className="group relative flex flex-col items-start rounded-xl p-1 text-left transition-all overflow-hidden cursor-pointer"
+                style={{
+                  minHeight: 150,
+                  background: dropDay === di ? 'rgba(242,196,0,0.22)' : isSelected ? 'rgba(242,196,0,0.14)' : 'var(--surface2)',
+                  outline: isSelected ? '1.5px solid #F2C400' : isToday ? '1px solid rgba(242,196,0,0.4)' : dropDay === di ? '1.5px dashed #F2C400' : 'none',
+                }}>
+                <div className="flex items-center justify-between w-full mb-0.5">
+                  <div className="flex flex-col">
+                    <span className="text-[8px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-2)' }}>{wd.toLocaleDateString('fr-FR', { weekday: 'short' })}</span>
+                    <span className="text-[11px] font-bold px-0.5" style={{ color: isToday ? '#F2C400' : 'var(--text-1)' }}>{wd.getDate()}</span>
+                  </div>
+                  <button onClick={(e) => { e.stopPropagation(); onAddOnDate(di) }}
+                    className="w-3.5 h-3.5 rounded-full items-center justify-center text-[10px] font-bold leading-none hidden group-hover:flex"
+                    style={{ background: '#F2C400', color: '#0E0E0D' }}>+</button>
+                </div>
+                <div className="w-full space-y-0.5">
+                  {items.map((s) => (
+                    <div key={s.id} draggable onDragStart={(e) => { e.stopPropagation(); setDragId(s.id) }} onDragEnd={() => setDragId(null)}
+                      className="text-[8px] leading-tight px-1 py-0.5 rounded truncate cursor-grab" style={{ background: `${colorOf(s)}22`, color: colorOf(s), borderLeft: `2px solid ${colorOf(s)}` }}>
+                      {s.time_slot && <span className="font-bold uppercase mr-1">{TIME_SLOT_LABEL[s.time_slot]}</span>}
+                      {s.title}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        )}
       </Card>
 
       {selectedDate && (
@@ -242,18 +414,20 @@ function SessionCalendarView({
           ) : (
             <div className="space-y-2">
               {daySessions.map((s) => (
-                <SessionLibraryRow key={s.id} session={s} onChanged={onChanged} clubId={clubId} coachId={coachId} color={colorOf(s)} />
+                <SessionLibraryRow key={s.id} session={s} onChanged={onChanged} clubId={clubId} coachId={coachId} color={colorOf(s)} autoExpand />
               ))}
             </div>
           )}
         </Card>
       )}
+      </>
+      )}
     </>
   )
 }
 
-function SessionLibraryRow({ session, onChanged, clubId, coachId, color }: { session: CoachSessionRow; onChanged: () => void; clubId: string; coachId: string; color: string }) {
-  const [expanded, setExpanded] = useState(false)
+function SessionLibraryRow({ session, onChanged, clubId, coachId, color, autoExpand }: { session: CoachSessionRow; onChanged: () => void; clubId: string; coachId: string; color: string; autoExpand?: boolean }) {
+  const [expanded, setExpanded] = useState(autoExpand ?? false)
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(session.title)
   const [description, setDescription] = useState(session.description ?? '')
@@ -391,10 +565,12 @@ function SessionLibraryRow({ session, onChanged, clubId, coachId, color }: { ses
               <p className="text-xs py-2" style={{ color: 'var(--text-2)' }}>Aucun athlète dans les groupes assignés.</p>
             ) : (
               <div className="space-y-1.5">
-                {realizations.map((r) => (
+                {realizations.map((r) => {
+                  const highRpe = r.status === 'done' && (r.rpe ?? 0) >= 8
+                  return (
                   <div key={r.profile_id} className="rounded-xl px-3 py-2" style={{ background: 'var(--surface2)' }}>
                     <div className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: r.status === 'done' ? '#5EBA65' : 'var(--border)' }} />
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: r.status !== 'done' ? 'var(--border)' : highRpe ? '#E4A400' : '#5EBA65' }} />
                       <span className="text-sm font-semibold flex-1 truncate" style={{ color: 'var(--text-1)' }}>{r.name}</span>
                       {r.status === 'done' ? (
                         <span className="text-xs font-bold" style={{ color: '#F2C400' }}>
@@ -409,6 +585,9 @@ function SessionLibraryRow({ session, onChanged, clubId, coachId, color }: { ses
                         </button>
                       )}
                     </div>
+                    {highRpe && (
+                      <p className="text-[11px] font-semibold mt-1 ml-3.5" style={{ color: '#E4A400' }}>RPE élevé — à surveiller</p>
+                    )}
                     {r.status === 'done' && (r.actual_distance_km || r.actual_duration_min) && (
                       <p className="text-xs mt-1 ml-3.5" style={{ color: 'var(--text-2)' }}>
                         {r.actual_distance_km ? `${r.actual_distance_km} km` : ''}{r.actual_duration_min ? ` · ${r.actual_duration_min} min` : ''}{r.rpe ? ` · RPE ${r.rpe}` : ''}
@@ -424,7 +603,8 @@ function SessionLibraryRow({ session, onChanged, clubId, coachId, color }: { ses
                       </div>
                     )}
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
@@ -438,7 +618,7 @@ interface SubgroupBlockState {
   groupId: string
   content: string
   isRest: boolean
-  targetSplits: string[]
+  targetSplits: TargetSplitDraft[]
 }
 
 export default function CoachSessions() {
@@ -456,7 +636,7 @@ export default function CoachSessions() {
   const [selectedGroupId, setSelectedGroupId] = useState<string>('')
   const [scheduledDate, setScheduledDate] = useState(new Date().toISOString().slice(0, 10))
   const [timeSlot, setTimeSlot] = useState<'matin' | 'apres-midi'>('matin')
-  const [targetSplits, setTargetSplits] = useState<string[]>([])
+  const [targetSplits, setTargetSplits] = useState<TargetSplitDraft[]>([])
   const [subgroupBlocks, setSubgroupBlocks] = useState<Record<string, SubgroupBlockState>>({})
   const [publishing, setPublishing] = useState(false)
   const [publishError, setPublishError] = useState<string | null>(null)
@@ -508,18 +688,16 @@ export default function CoachSessions() {
     try {
       const workBlocks = subgroups
         .map((sg) => subgroupState(sg.id))
-        .filter((b) => b.content.trim() || b.isRest || b.targetSplits.some((s) => s.trim()))
+        .filter((b) => b.content.trim() || b.isRest || b.targetSplits.length > 0)
         .map((b) => ({
           group_id: b.groupId,
           label: subgroups.find((sg) => sg.id === b.groupId)?.name ?? '',
           content: b.content,
           target_pace_sec_per_km: null,
           is_rest: b.isRest,
-          target_splits: b.targetSplits.map((s) => parseFloat(s.replace(',', '.'))).filter((n) => !Number.isNaN(n) && n > 0),
+          target_splits: b.targetSplits,
         }))
-      const mainTargetSplits = discipline === 'course'
-        ? targetSplits.map((s) => parseFloat(s.replace(',', '.'))).filter((n) => !Number.isNaN(n) && n > 0)
-        : []
+      const mainTargetSplits = discipline === 'course' ? targetSplits : []
       if (mainTargetSplits.length > 0) {
         workBlocks.unshift({ group_id: effectiveGroupId, label: activeGroup?.name ?? '', content: description, target_pace_sec_per_km: null, is_rest: false, target_splits: mainTargetSplits })
       }
@@ -568,7 +746,7 @@ export default function CoachSessions() {
       {tab === 'calendar' && profile && (
         <SessionCalendarView
           sessions={coachSessions ?? []}
-          groups={topGroups}
+          groups={allGroups}
           sessionTypes={sessionTypes ?? []}
           selectedDate={calSelectedDate}
           onSelectDate={setCalSelectedDate}
@@ -708,7 +886,7 @@ export default function CoachSessions() {
               <MiniCalendar value={scheduledDate} onChange={setScheduledDate} />
             </div>
 
-            {discipline === 'course' && <TargetSplitsEditor splits={targetSplits} onChange={setTargetSplits} />}
+            {discipline === 'course' && <ChronoObjectivesEditor splits={targetSplits} onChange={setTargetSplits} />}
           </Card>
 
           {/* Sous-groupes: contenu différencié par sous-groupe pour la même séance */}
@@ -734,7 +912,7 @@ export default function CoachSessions() {
                             placeholder="Contenu spécifique à ce sous-groupe…"
                             className="w-full rounded-[10px] px-3 py-2 text-sm outline-none resize-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
                           {discipline === 'course' && (
-                            <TargetSplitsEditor splits={st.targetSplits} onChange={(splits) => updateSubgroupState(sg.id, { targetSplits: splits })} />
+                            <ChronoObjectivesEditor splits={st.targetSplits} onChange={(splits) => updateSubgroupState(sg.id, { targetSplits: splits })} />
                           )}
                         </>
                       )}

@@ -478,13 +478,22 @@ export default function HomeScreen() {
             <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>Chronos par répétition (optionnel)</p>
             <div className="flex items-center gap-3">
               {!!myWorkBlock?.target_splits.length && splits.length === 0 && (
-                <button onClick={() => setSplits(myWorkBlock.target_splits.map(() => ({ time: '', recovery: '' })))} className="text-xs font-bold" style={{ color: '#5B91D8' }}>
+                <button onClick={() => setSplits(myWorkBlock.target_splits.map((t) => ({ time: '', recovery: t.recovery_seconds ? String(t.recovery_seconds) : '' })))} className="text-xs font-bold" style={{ color: '#5B91D8' }}>
                   Pré-remplir ({myWorkBlock.target_splits.length})
                 </button>
               )}
               <button onClick={() => setSplits((p) => [...p, { time: '', recovery: '' }])} className="text-xs font-bold" style={{ color: '#F2C400' }}>+ Ajouter</button>
             </div>
           </div>
+          {!!myWorkBlock?.target_splits.length && (
+            <div className="flex flex-wrap gap-1 mb-1.5">
+              {myWorkBlock.target_splits.map((t, i) => (
+                <span key={i} className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
+                  #{i + 1}{t.distance_m ? ` ${t.distance_m}m` : ''} obj. {t.target_time_seconds}s{t.recovery_seconds ? ` · r${t.recovery_seconds}s` : ''}
+                </span>
+              ))}
+            </div>
+          )}
           {splits.length > 0 && (
             <div className="space-y-1.5">
               <div className="flex items-center gap-2 pl-16">

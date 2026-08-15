@@ -889,21 +889,27 @@ export type Database = {
       session_target_splits: {
         Row: {
           created_at: string
+          distance_m: number | null
           id: string
+          recovery_seconds: number | null
           rep_number: number
           target_time_seconds: number | null
           work_block_id: string
         }
         Insert: {
           created_at?: string
+          distance_m?: number | null
           id?: string
+          recovery_seconds?: number | null
           rep_number: number
           target_time_seconds?: number | null
           work_block_id: string
         }
         Update: {
           created_at?: string
+          distance_m?: number | null
           id?: string
+          recovery_seconds?: number | null
           rep_number?: number
           target_time_seconds?: number | null
           work_block_id?: string
