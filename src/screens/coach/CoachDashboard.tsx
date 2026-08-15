@@ -11,11 +11,13 @@ import { sendMemberEmail } from '../../lib/queries/clubAdmin'
 import { fetchOrCreateDm, sendMessage } from '../../lib/queries/messages'
 import { SkeletonRows, Skeleton, CountUp } from '../../components/Skeleton'
 import { useToast } from '../../components/Toast'
+import CoachDesktopSidebar from '../../components/CoachDesktopSidebar'
+import CoachCommunityRail from '../../components/CoachCommunityRail'
 
 const STATUS_LABEL: Record<VigilanceAthlete['status'], string> = { alerte: 'Alerte', attention: 'À surveiller', ok: 'En forme' }
 const STATUS_COLOR: Record<VigilanceAthlete['status'], string> = { alerte: '#E4574A', attention: '#F2C400', ok: '#5EBA65' }
 
-export default function CoachDashboard() {
+export default function CoachDashboard({ onOpenCommunity, onOpenStats }: { onOpenCommunity: () => void; onOpenStats: () => void }) {
   const { profile } = useApp()
   const clubId = profile?.club_id ?? ''
 
@@ -58,8 +60,8 @@ export default function CoachDashboard() {
 
   const today = new Date()
 
-  return (
-    <div className="p-4 md:p-6 space-y-4 max-w-3xl mx-auto">
+  const content = (
+    <div className="p-4 md:p-6 space-y-4 max-w-3xl mx-auto lg:max-w-none lg:mx-0 lg:p-0">
       {/* Header */}
       <div className="flex items-start justify-between pt-1">
         <div>
@@ -237,5 +239,23 @@ export default function CoachDashboard() {
         )}
       </Card>
     </div>
+  )
+
+  return (
+    <>
+      {/* Mobile / tablet: single column */}
+      <div className="lg:hidden">{content}</div>
+
+      {/* Desktop: profile sidebar + main + ambient community/stats rail, athlete-Home-style */}
+      <div className="hidden lg:block" style={{ background: 'var(--bg)' }}>
+        <div className="max-w-[1320px] mx-auto px-4 py-6">
+          <div className="grid gap-5 items-start" style={{ gridTemplateColumns: '240px 1fr 300px' }}>
+            <CoachDesktopSidebar />
+            {content}
+            <CoachCommunityRail clubId={clubId} onOpenCommunity={onOpenCommunity} onOpenStats={onOpenStats} />
+          </div>
+        </div>
+      </div>
+    </>
   )
 }

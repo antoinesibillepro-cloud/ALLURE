@@ -252,7 +252,7 @@ function SessionLibraryRow({ session, onChanged, clubId, coachId, color }: { ses
                       <div className="flex flex-wrap gap-1 mt-1.5 ml-3.5">
                         {r.splits.map((s) => (
                           <span key={s.rep_number} className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: 'var(--surface3)', color: 'var(--text-1)' }}>
-                            #{s.rep_number} {s.time_seconds}s
+                            #{s.rep_number} {s.time_seconds}s{s.recovery_seconds ? <span style={{ color: 'var(--text-2)' }}> · récup {s.recovery_seconds}s</span> : ''}
                           </span>
                         ))}
                       </div>

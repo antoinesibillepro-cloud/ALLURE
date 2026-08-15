@@ -164,14 +164,17 @@ export async function validateSession(
   return data.id
 }
 
-export interface SessionSplit { id: string; rep_number: number; time_seconds: number }
+export interface SessionSplit { id: string; rep_number: number; time_seconds: number; recovery_seconds: number | null }
 
-export async function saveSessionSplits(sessionCompletionId: string, splits: { rep_number: number; time_seconds: number }[]) {
+export async function saveSessionSplits(sessionCompletionId: string, splits: { rep_number: number; time_seconds: number; recovery_seconds?: number | null }[]) {
   const { error: delErr } = await supabase.from('session_splits').delete().eq('session_completion_id', sessionCompletionId)
   if (delErr) throw delErr
   if (splits.length === 0) return
   const { error } = await supabase.from('session_splits').insert(
-    splits.map((s) => ({ session_completion_id: sessionCompletionId, rep_number: s.rep_number, time_seconds: s.time_seconds })),
+    splits.map((s) => ({
+      session_completion_id: sessionCompletionId, rep_number: s.rep_number, time_seconds: s.time_seconds,
+      recovery_seconds: s.recovery_seconds ?? null,
+    })),
   )
   if (error) throw error
 }
@@ -179,7 +182,7 @@ export async function saveSessionSplits(sessionCompletionId: string, splits: { r
 export async function fetchSessionSplits(sessionCompletionId: string): Promise<SessionSplit[]> {
   const { data, error } = await supabase
     .from('session_splits')
-    .select('id, rep_number, time_seconds')
+    .select('id, rep_number, time_seconds, recovery_seconds')
     .eq('session_completion_id', sessionCompletionId)
     .order('rep_number')
   if (error) throw error
@@ -237,7 +240,7 @@ export interface AthleteRealization {
   actual_distance_km: number | null
   actual_duration_min: number | null
   note: string | null
-  splits: { rep_number: number; time_seconds: number }[]
+  splits: { rep_number: number; time_seconds: number; recovery_seconds: number | null }[]
 }
 
 /** Every club athlete's completion (if any) for a session, with splits. */
@@ -261,12 +264,12 @@ export async function fetchSessionRealizations(sessionId: string, groupIds: stri
 
   const completionIds = (completions ?? []).map((c) => c.id)
   const { data: splitsRows } = completionIds.length
-    ? await supabase.from('session_splits').select('session_completion_id, rep_number, time_seconds').in('session_completion_id', completionIds)
+    ? await supabase.from('session_splits').select('session_completion_id, rep_number, time_seconds, recovery_seconds').in('session_completion_id', completionIds)
     : { data: [] }
-  const splitsByCompletion = new Map<string, { rep_number: number; time_seconds: number }[]>()
+  const splitsByCompletion = new Map<string, { rep_number: number; time_seconds: number; recovery_seconds: number | null }[]>()
   for (const s of splitsRows ?? []) {
     const arr = splitsByCompletion.get(s.session_completion_id) ?? []
-    arr.push({ rep_number: s.rep_number, time_seconds: s.time_seconds })
+    arr.push({ rep_number: s.rep_number, time_seconds: s.time_seconds, recovery_seconds: s.recovery_seconds })
     splitsByCompletion.set(s.session_completion_id, arr)
   }
 
@@ -283,4 +286,65 @@ export async function fetchSessionRealizations(sessionId: string, groupIds: stri
       splits: c ? (splitsByCompletion.get(c.id) ?? []) : [],
     }
   })
+}
+
+export interface AthleteHistoryEntry {
+  id: string
+  title: string
+  type: string | null
+  completed_at: string
+  status: 'done' | 'skipped' | 'free_session'
+  distance_km: number | null
+  duration_min: number | null
+  rpe: number | null
+  note: string | null
+  splits: { rep_number: number; time_seconds: number; recovery_seconds: number | null }[]
+}
+
+/** An athlete's completed sessions (club sessions + free sessions), most recent first — the coach's athlete-centric session history. */
+export async function fetchAthleteSessionHistory(profileId: string, limit = 30): Promise<AthleteHistoryEntry[]> {
+  const { data: completions, error } = await supabase
+    .from('session_completions')
+    .select(`
+      id, status, rpe, note, completed_at,
+      actual_distance_km, actual_duration_min,
+      free_session_title, free_session_distance_km, free_session_duration_min,
+      session:sessions(title, type, duration_min, distance_km)
+    `)
+    .eq('profile_id', profileId)
+    .in('status', ['done', 'free_session'])
+    .order('completed_at', { ascending: false })
+    .limit(limit)
+  if (error) throw error
+
+  const rows = (completions ?? []) as unknown as {
+    id: string; status: 'done' | 'free_session'; rpe: number | null; note: string | null; completed_at: string
+    actual_distance_km: number | null; actual_duration_min: number | null
+    free_session_title: string | null; free_session_distance_km: number | null; free_session_duration_min: number | null
+    session: { title: string; type: string; duration_min: number | null; distance_km: number | null } | null
+  }[]
+
+  const ids = rows.map((r) => r.id)
+  const { data: splitsRows } = ids.length
+    ? await supabase.from('session_splits').select('session_completion_id, rep_number, time_seconds, recovery_seconds').in('session_completion_id', ids).order('rep_number')
+    : { data: [] }
+  const splitsByCompletion = new Map<string, AthleteHistoryEntry['splits']>()
+  for (const s of splitsRows ?? []) {
+    const arr = splitsByCompletion.get(s.session_completion_id) ?? []
+    arr.push({ rep_number: s.rep_number, time_seconds: s.time_seconds, recovery_seconds: s.recovery_seconds })
+    splitsByCompletion.set(s.session_completion_id, arr)
+  }
+
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.status === 'free_session' ? (r.free_session_title ?? 'Séance libre') : (r.session?.title ?? 'Séance'),
+    type: r.status === 'free_session' ? null : (r.session?.type ?? null),
+    completed_at: r.completed_at,
+    status: r.status,
+    distance_km: r.status === 'free_session' ? r.free_session_distance_km : (r.actual_distance_km ?? r.session?.distance_km ?? null),
+    duration_min: r.status === 'free_session' ? r.free_session_duration_min : (r.actual_duration_min ?? r.session?.duration_min ?? null),
+    rpe: r.rpe,
+    note: r.note,
+    splits: splitsByCompletion.get(r.id) ?? [],
+  }))
 }

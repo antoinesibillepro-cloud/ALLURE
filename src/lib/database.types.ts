@@ -845,6 +845,7 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          recovery_seconds: number | null
           rep_number: number
           session_completion_id: string
           time_seconds: number
@@ -852,6 +853,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          recovery_seconds?: number | null
           rep_number: number
           session_completion_id: string
           time_seconds: number
@@ -859,6 +861,7 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          recovery_seconds?: number | null
           rep_number?: number
           session_completion_id?: string
           time_seconds?: number

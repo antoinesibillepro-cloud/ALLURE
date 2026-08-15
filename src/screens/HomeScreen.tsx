@@ -374,7 +374,7 @@ export default function HomeScreen() {
   const [rpe, setRpe] = useState<number | null>(null)
   const [actualDistance, setActualDistance] = useState('')
   const [actualDuration, setActualDuration] = useState('')
-  const [splits, setSplits] = useState<string[]>([])
+  const [splits, setSplits] = useState<{ time: string; recovery: string }[]>([])
 
   function resetValidationForm() {
     setRpe(null); setActualDistance(''); setActualDuration(''); setSplits([])
@@ -388,7 +388,11 @@ export default function HomeScreen() {
       const durationMin = actualDuration ? parseInt(actualDuration, 10) : null
       const completionId = await validateSession(selectedSession.id, profile.id, rpe, '', distanceKm, durationMin)
       const parsedSplits = splits
-        .map((s, i) => ({ rep_number: i + 1, time_seconds: parseFloat(s.replace(',', '.')) }))
+        .map((s, i) => ({
+          rep_number: i + 1,
+          time_seconds: parseFloat(s.time.replace(',', '.')),
+          recovery_seconds: s.recovery ? parseFloat(s.recovery.replace(',', '.')) : null,
+        }))
         .filter((s) => !Number.isNaN(s.time_seconds) && s.time_seconds > 0)
       if (parsedSplits.length > 0) await saveSessionSplits(completionId, parsedSplits)
       await Promise.all([refetchToday(), refetchWeekSessions()])
@@ -471,27 +475,35 @@ export default function HomeScreen() {
 
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>Temps par répétition (optionnel)</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>Chronos par répétition (optionnel)</p>
             <div className="flex items-center gap-3">
               {!!myWorkBlock?.target_splits.length && splits.length === 0 && (
-                <button onClick={() => setSplits(myWorkBlock.target_splits.map(() => ''))} className="text-xs font-bold" style={{ color: '#5B91D8' }}>
+                <button onClick={() => setSplits(myWorkBlock.target_splits.map(() => ({ time: '', recovery: '' })))} className="text-xs font-bold" style={{ color: '#5B91D8' }}>
                   Pré-remplir ({myWorkBlock.target_splits.length})
                 </button>
               )}
-              <button onClick={() => setSplits((p) => [...p, ''])} className="text-xs font-bold" style={{ color: '#F2C400' }}>+ Ajouter</button>
+              <button onClick={() => setSplits((p) => [...p, { time: '', recovery: '' }])} className="text-xs font-bold" style={{ color: '#F2C400' }}>+ Ajouter</button>
             </div>
           </div>
           {splits.length > 0 && (
             <div className="space-y-1.5">
+              <div className="flex items-center gap-2 pl-16">
+                <span className="flex-1 text-[9px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>Temps</span>
+                <span className="flex-1 text-[9px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>Récup</span>
+                <span className="w-4" />
+              </div>
               {splits.map((s, i) => {
                 const target = myWorkBlock?.target_splits[i]?.target_time_seconds
                 return (
                   <div key={i} className="flex items-center gap-2">
                     <span className="text-xs w-14 shrink-0" style={{ color: 'var(--text-2)' }}>Rép. {i + 1}</span>
-                    <input value={s} onChange={(e) => setSplits((p) => p.map((v, j) => j === i ? e.target.value : v))}
-                      placeholder={target ? `cible ${target}s` : 'secondes'} inputMode="decimal"
-                      className="flex-1 px-3 py-1.5 rounded-[10px] text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
-                    <button onClick={() => setSplits((p) => p.filter((_, j) => j !== i))} className="text-xs" style={{ color: '#E4574A' }}>×</button>
+                    <input value={s.time} onChange={(e) => setSplits((p) => p.map((v, j) => j === i ? { ...v, time: e.target.value } : v))}
+                      placeholder={target ? `cible ${target}s` : 'sec.'} inputMode="decimal"
+                      className="flex-1 min-w-0 px-3 py-1.5 rounded-[10px] text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+                    <input value={s.recovery} onChange={(e) => setSplits((p) => p.map((v, j) => j === i ? { ...v, recovery: e.target.value } : v))}
+                      placeholder="sec." inputMode="decimal"
+                      className="flex-1 min-w-0 px-3 py-1.5 rounded-[10px] text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+                    <button onClick={() => setSplits((p) => p.filter((_, j) => j !== i))} className="text-xs shrink-0 w-4" style={{ color: '#E4574A' }}>×</button>
                   </div>
                 )
               })}

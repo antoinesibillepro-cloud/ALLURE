@@ -166,14 +166,16 @@ const ATHLETE_NAV: NavItem<AScreen>[] = [
   { id: 'club', label: 'Club', short: 'Club', icon: (a) => <IcClub active={a} /> },
 ]
 
+// Communauté and Stats club are still fully functional screens (reachable via
+// links from the Dashboard sidebars) — just no longer primary nav tabs, per
+// the coach's request to declutter the top menu and surface community content
+// ambiently instead, athlete-Home-style.
 const COACH_NAV: NavItem<CScreen>[] = [
   { id: 'dashboard', label: 'Dashboard', short: 'Dashboard', icon: (a) => <IcDashboard active={a} /> },
   { id: 'groups', label: 'Groupes', short: 'Groupes', icon: (a) => <IcGroups active={a} /> },
   { id: 'athletes', label: 'Athlètes', short: 'Athlètes', icon: (a) => <IcAthletes active={a} /> },
   { id: 'sessions', label: 'Séances', short: 'Séances', icon: (a) => <IcSessions active={a} /> },
-  { id: 'community', label: 'Communauté', short: 'Communauté', icon: (a) => <IcCommunity active={a} /> },
   { id: 'messaging', label: 'Messagerie', short: 'Messages', icon: (a) => <IcMessage active={a} /> },
-  { id: 'clubstats', label: 'Stats club', short: 'Stats', icon: (a) => <IcStats active={a} /> },
   { id: 'races', label: 'Courses', short: 'Courses', icon: (a) => <IcClub active={a} /> },
   { id: 'admin', label: 'Administration', short: 'Admin', icon: (a) => <IcSettings active={a} /> },
 ]
@@ -286,7 +288,7 @@ export default function App() {
       onOpenCommunity={isCoach ? () => { setCScreen('community'); setShowProfile(false) } : undefined} />
     if (isCoach) {
       switch (cScreen) {
-        case 'dashboard': return <CoachDashboard />
+        case 'dashboard': return <CoachDashboard onOpenCommunity={() => setCScreen('community')} onOpenStats={() => setCScreen('clubstats')} />
         case 'groups':    return <CoachGroups />
         case 'athletes':  return <CoachAthletes />
         case 'sessions':  return <CoachSessions />

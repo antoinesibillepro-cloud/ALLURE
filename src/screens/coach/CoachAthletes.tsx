@@ -9,14 +9,76 @@ import {
   type PersonalRecord, type Injury,
 } from '../../lib/queries/profileExtras'
 import { fetchDisciplineBreakdown, type DisciplineBreakdown } from '../../lib/queries/crossTraining'
+import { fetchAthleteSessionHistory, type AthleteHistoryEntry } from '../../lib/queries/sessions'
 import { DonutChart } from '../../components/charts'
 import { useToast } from '../../components/Toast'
+import { SkeletonRows } from '../../components/Skeleton'
 
 function initialsOf(name: string) {
   return name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
 }
 
 const SEVERITY_COLOR: Record<string, string> = { légère: '#3D9E4A', modérée: '#F2C400', grave: '#C94040' }
+
+function paceLabel(km: number | null, min: number | null): string | null {
+  if (!km || !min || km <= 0) return null
+  const secPerKm = (min * 60) / km
+  const m = Math.floor(secPerKm / 60)
+  const s = Math.round(secPerKm % 60)
+  return `${m}'${s.toString().padStart(2, '0')}"/km`
+}
+
+function HistoryRow({ entry }: { entry: AthleteHistoryEntry }) {
+  const [open, setOpen] = useState(false)
+  const pace = paceLabel(entry.distance_km, entry.duration_min)
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: 'var(--surface2)' }}>
+      <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center gap-3 px-3 py-2.5 text-left">
+        <div className="w-9 h-9 rounded-lg flex flex-col items-center justify-center shrink-0" style={{ background: 'var(--surface3)' }}>
+          <span className="text-[11px] font-black leading-none" style={{ color: 'var(--text-1)' }}>
+            {new Date(entry.completed_at).toLocaleDateString('fr-FR', { day: 'numeric' })}
+          </span>
+          <span className="text-[8px] font-bold uppercase" style={{ color: 'var(--text-2)' }}>
+            {new Date(entry.completed_at).toLocaleDateString('fr-FR', { month: 'short' })}
+          </span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-1)' }}>
+            {entry.title}{entry.status === 'free_session' ? ' (libre)' : ''}
+          </p>
+          <p className="text-[11px] truncate" style={{ color: 'var(--text-2)' }}>
+            {entry.distance_km ? `${entry.distance_km} km` : '—'}
+            {entry.duration_min ? ` · ${entry.duration_min} min` : ''}
+            {pace ? ` · ${pace}` : ''}
+            {entry.rpe ? ` · RPE ${entry.rpe}` : ''}
+          </p>
+        </div>
+        {entry.splits.length > 0 && (
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0" style={{ background: 'rgba(91,145,216,0.15)', color: '#5B91D8' }}>
+            {entry.splits.length} chronos
+          </span>
+        )}
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" className="shrink-0" style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>
+          <path d="M4.5 3L7.5 6L4.5 9" stroke="var(--text-2)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open && (entry.note || entry.splits.length > 0) && (
+        <div className="px-3 pb-3">
+          {entry.note && <p className="text-xs mb-2" style={{ color: 'var(--text-2)' }}>{entry.note}</p>}
+          {entry.splits.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {entry.splits.map((s) => (
+                <span key={s.rep_number} className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: 'var(--surface3)', color: 'var(--text-1)' }}>
+                  #{s.rep_number} {s.time_seconds}s{s.recovery_seconds ? <span style={{ color: 'var(--text-2)' }}> · récup {s.recovery_seconds}s</span> : ''}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function AthleteDetail({ profileId, name }: { profileId: string; name: string }) {
   const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString()
@@ -48,6 +110,7 @@ function AthleteDetail({ profileId, name }: { profileId: string; name: string })
   }
   const { data: injuries } = useQuery<Injury[]>(() => fetchInjuries(profileId), [profileId])
   const { data: breakdown } = useQuery<DisciplineBreakdown[]>(() => fetchDisciplineBreakdown(profileId, monthAgo, now.toISOString()), [profileId])
+  const { data: history, loading: historyLoading } = useQuery<AthleteHistoryEntry[]>(() => fetchAthleteSessionHistory(profileId, 30), [profileId])
 
   return (
     <div className="space-y-4">
@@ -108,6 +171,19 @@ function AthleteDetail({ profileId, name }: { profileId: string; name: string })
             <DonutChart segments={breakdown} />
           )}
         </div>
+      </Card>
+
+      <Card>
+        <SectionLabel>Historique des séances</SectionLabel>
+        {historyLoading ? (
+          <SkeletonRows count={3} />
+        ) : !history?.length ? (
+          <p className="text-sm py-3" style={{ color: 'var(--text-2)' }}>Aucune séance réalisée pour l'instant.</p>
+        ) : (
+          <div className="space-y-1.5 mt-2">
+            {history.map((h) => <HistoryRow key={h.id} entry={h} />)}
+          </div>
+        )}
       </Card>
 
       <Card>
