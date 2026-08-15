@@ -1005,6 +1005,7 @@ export type Database = {
           cooldown: string | null
           created_at: string
           description: string | null
+          discipline: string
           distance_km: number | null
           duration_min: number | null
           id: string
@@ -1023,6 +1024,7 @@ export type Database = {
           cooldown?: string | null
           created_at?: string
           description?: string | null
+          discipline?: string
           distance_km?: number | null
           duration_min?: number | null
           id?: string
@@ -1041,6 +1043,7 @@ export type Database = {
           cooldown?: string | null
           created_at?: string
           description?: string | null
+          discipline?: string
           distance_km?: number | null
           duration_min?: number | null
           id?: string

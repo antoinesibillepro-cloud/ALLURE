@@ -5,10 +5,13 @@ import { useQuery } from '../../lib/useQuery'
 import { fetchGroups, type GroupWithMembers } from '../../lib/queries/groups'
 import {
   createSession, fetchCoachSessions, updateSession, deleteSession, fetchSessionRealizations,
-  type AthleteRealization,
+  type AthleteRealization, type SessionDiscipline,
 } from '../../lib/queries/sessions'
 import { fetchSessionTypes, createSessionType, type SessionTypeRow } from '../../lib/queries/sessionTypes'
 import { fetchOrCreateDm, sendMessage } from '../../lib/queries/messages'
+
+const DISCIPLINE_LABEL: Record<SessionDiscipline, string> = { course: 'Course à pied', velo: 'Vélo', natation: 'Natation', muscu: 'Musculation' }
+const DISCIPLINE_COLOR: Record<SessionDiscipline, string> = { course: '#F2C400', velo: '#5B91D8', natation: '#3DD6C4', muscu: '#C94040' }
 
 function MiniCalendar({ value, onChange }: { value: string; onChange: (iso: string) => void }) {
   const [monthOffset, setMonthOffset] = useState(0)
@@ -91,6 +94,7 @@ function paceFromDistanceDuration(distanceKm: number | null, durationMin: number
 
 type CoachSessionRow = {
   id: string; title: string; type: string; description: string | null
+  discipline: SessionDiscipline
   duration_min: number | null; distance_km: number | null; vma_percent: number | null
   scheduled_at: string; status: string
   session_assignments: { group_id: string; groups: { name: string } | null }[]
@@ -161,6 +165,12 @@ function SessionLibraryRow({ session, onChanged, clubId, coachId, color }: { ses
           <div className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />
             <p className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>{session.title}</p>
+            {session.discipline !== 'course' && (
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0"
+                style={{ background: `${DISCIPLINE_COLOR[session.discipline]}22`, color: DISCIPLINE_COLOR[session.discipline] }}>
+                {DISCIPLINE_LABEL[session.discipline]}
+              </span>
+            )}
           </div>
           <p className="text-xs truncate" style={{ color: 'var(--text-2)' }}>{groupNames || 'Aucun groupe'} · {session.status === 'published' ? 'Publiée' : 'Brouillon'}</p>
         </div>
@@ -176,8 +186,12 @@ function SessionLibraryRow({ session, onChanged, clubId, coachId, color }: { ses
               {session.description && <p className="text-sm mb-3" style={{ color: 'var(--text-2)' }}>{session.description}</p>}
               <div className="flex gap-4 mb-3">
                 <span className="text-xs" style={{ color: 'var(--text-2)' }}>{session.duration_min ?? '—'} min</span>
-                <span className="text-xs" style={{ color: 'var(--text-2)' }}>{session.distance_km ?? '—'} km</span>
-                <span className="text-xs" style={{ color: 'var(--text-2)' }}>{session.vma_percent ?? '—'}% VMA</span>
+                {session.discipline !== 'muscu' && (
+                  <span className="text-xs" style={{ color: 'var(--text-2)' }}>{session.distance_km ?? '—'} km</span>
+                )}
+                {session.discipline === 'course' && (
+                  <span className="text-xs" style={{ color: 'var(--text-2)' }}>{session.vma_percent ?? '—'}% VMA</span>
+                )}
               </div>
               <div className="flex gap-2">
                 <button onClick={() => setEditing(true)} className="text-xs font-bold px-3 py-1.5 rounded-lg" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
@@ -279,6 +293,7 @@ export default function CoachSessions() {
   const { profile } = useApp()
   const [tab, setTab] = useState<'create' | 'library'>('create')
   const [sessionType, setSessionType] = useState('')
+  const [discipline, setDiscipline] = useState<SessionDiscipline>('course')
   const [duration, setDuration] = useState(55)
   const [distance, setDistance] = useState(12)
   const [vmaPercent, setVmaPercent] = useState(88)
@@ -291,8 +306,6 @@ export default function CoachSessions() {
   const [publishing, setPublishing] = useState(false)
   const [publishError, setPublishError] = useState<string | null>(null)
   const [publishedOk, setPublishedOk] = useState(false)
-  const [generating, setGenerating] = useState(false)
-  const [generatedOk, setGeneratedOk] = useState(false)
   const [newTypeName, setNewTypeName] = useState('')
 
   const { data: groups, loading: groupsLoading } = useQuery<GroupWithMembers[]>(
@@ -349,7 +362,9 @@ export default function CoachSessions() {
           is_rest: b.isRest,
           target_splits: b.targetSplits.map((s) => parseFloat(s.replace(',', '.'))).filter((n) => !Number.isNaN(n) && n > 0),
         }))
-      const mainTargetSplits = targetSplits.map((s) => parseFloat(s.replace(',', '.'))).filter((n) => !Number.isNaN(n) && n > 0)
+      const mainTargetSplits = discipline === 'course'
+        ? targetSplits.map((s) => parseFloat(s.replace(',', '.'))).filter((n) => !Number.isNaN(n) && n > 0)
+        : []
       if (mainTargetSplits.length > 0) {
         workBlocks.unshift({ group_id: effectiveGroupId, label: activeGroup?.name ?? '', content: description, target_pace_sec_per_km: null, is_rest: false, target_splits: mainTargetSplits })
       }
@@ -357,9 +372,10 @@ export default function CoachSessions() {
         title: sessionType,
         type: sessionType,
         description,
+        discipline,
         duration_min: duration,
-        distance_km: distance,
-        vma_percent: vmaPercent,
+        distance_km: discipline === 'muscu' ? null : distance,
+        vma_percent: discipline === 'course' ? vmaPercent : null,
         scheduled_at: new Date(scheduledDate).toISOString(),
         time_slot: timeSlot,
         group_ids: [effectiveGroupId, ...subgroups.map((sg) => sg.id)],
@@ -377,43 +393,11 @@ export default function CoachSessions() {
     }
   }
 
-  async function handleGenerateExamples() {
-    if (!profile || !effectiveGroupId) return
-    setGenerating(true)
-    setGeneratedOk(false)
-    try {
-      const examples: Array<{ title: string; description: string; duration_min: number; distance_km: number; vma_percent: number; dayOffset: number }> = [
-        { title: 'Endurance fondamentale', description: 'Footing facile, allure conversation.', duration_min: 45, distance_km: 8, vma_percent: 65, dayOffset: 0 },
-        { title: 'Fractionné VMA', description: '10×400m à 95% VMA, R=1\'30 trot.', duration_min: 50, distance_km: 10, vma_percent: 95, dayOffset: 2 },
-        { title: 'Seuil lactique', description: '3×2000m à 85% VMA, R=3\' trot.', duration_min: 55, distance_km: 11, vma_percent: 85, dayOffset: 4 },
-        { title: 'Sortie longue', description: 'Sortie longue à allure endurance, dernier tiers un peu plus soutenu.', duration_min: 75, distance_km: 15, vma_percent: 70, dayOffset: 6 },
-      ]
-      for (const ex of examples) {
-        const date = new Date()
-        date.setDate(date.getDate() + ex.dayOffset)
-        await createSession(profile.club_id, profile.id, {
-          title: ex.title, type: ex.title, description: ex.description,
-          duration_min: ex.duration_min, distance_km: ex.distance_km, vma_percent: ex.vma_percent,
-          scheduled_at: date.toISOString(), group_ids: [effectiveGroupId], status: 'published',
-        })
-      }
-      setGeneratedOk(true)
-      setTimeout(() => setGeneratedOk(false), 3000)
-    } finally {
-      setGenerating(false)
-    }
-  }
-
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-2xl mx-auto md:max-w-3xl">
       <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
         <h1 className="text-2xl font-black" style={{ color: 'var(--text-1)' }}>Séances</h1>
         <div className="flex items-center gap-2">
-          <button onClick={handleGenerateExamples} disabled={generating || !effectiveGroupId}
-            className="text-xs font-bold px-3 py-2 rounded-[12px] disabled:opacity-50"
-            style={{ background: generatedOk ? 'rgba(94,186,101,0.15)' : 'var(--surface2)', color: generatedOk ? '#5EBA65' : 'var(--text-1)' }}>
-            {generating ? 'Génération…' : generatedOk ? 'Séances générées' : 'Générer des séances d\'exemple'}
-          </button>
           <div className="flex gap-1 p-1 rounded-[12px]" style={{ background: 'var(--card)', boxShadow: 'var(--card-shadow)' }}>
             {(['create', 'library'] as const).map((t) => (
               <button key={t} onClick={() => setTab(t)}
@@ -431,6 +415,25 @@ export default function CoachSessions() {
           {/* Session editor */}
           <Card>
             <SectionLabel>Nouvelle séance</SectionLabel>
+
+            {/* Discipline selector */}
+            <div className="mb-4">
+              <label className="text-[10px] uppercase tracking-widest mb-2 block" style={{ color: 'var(--text-2)' }}>Discipline</label>
+              <div className="flex flex-wrap gap-2">
+                {(Object.keys(DISCIPLINE_LABEL) as SessionDiscipline[]).map((d) => (
+                  <button key={d} onClick={() => setDiscipline(d)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-[12px] text-xs font-semibold transition-all"
+                    style={{
+                      background: discipline === d ? `${DISCIPLINE_COLOR[d]}26` : 'var(--surface2)',
+                      color: discipline === d ? DISCIPLINE_COLOR[d] : 'var(--text-2)',
+                      border: discipline === d ? `1px solid ${DISCIPLINE_COLOR[d]}4d` : '1px solid transparent',
+                    }}>
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: DISCIPLINE_COLOR[d] }} />
+                    {DISCIPLINE_LABEL[d]}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {/* Type selector */}
             <div className="mb-4">
@@ -458,13 +461,13 @@ export default function CoachSessions() {
               </div>
             </div>
 
-            {/* Numeric fields */}
-            <div className="grid grid-cols-3 gap-3 mb-4">
+            {/* Numeric fields — distance only for course/vélo/natation, %VMA only for course */}
+            <div className="grid gap-3 mb-4" style={{ gridTemplateColumns: `repeat(${discipline === 'muscu' ? 1 : discipline === 'course' ? 3 : 2}, minmax(0, 1fr))` }}>
               {[
-                { label: 'Durée', value: duration, set: setDuration, unit: 'min', min: 10, max: 180, step: 5 },
-                { label: 'Distance', value: distance, set: setDistance, unit: 'km', min: 1, max: 40, step: 1 },
-                { label: '%VMA', value: vmaPercent, set: setVmaPercent, unit: '%', min: 60, max: 105, step: 1 },
-              ].map(({ label, value, set, unit, min, max, step }) => (
+                { label: 'Durée', value: duration, set: setDuration, unit: 'min', min: 10, max: 180, step: 5, show: true },
+                { label: 'Distance', value: distance, set: setDistance, unit: 'km', min: 1, max: 40, step: 1, show: discipline !== 'muscu' },
+                { label: '%VMA', value: vmaPercent, set: setVmaPercent, unit: '%', min: 60, max: 105, step: 1, show: discipline === 'course' },
+              ].filter((f) => f.show).map(({ label, value, set, unit, min, max, step }) => (
                 <div key={label} className="rounded-[12px] p-3" style={{ background: 'var(--surface2)' }}>
                   <p className="text-[8px] uppercase tracking-widest mb-1.5" style={{ color: 'var(--text-2)' }}>{label}</p>
                   <div className="flex items-center gap-1">
@@ -534,7 +537,7 @@ export default function CoachSessions() {
               <MiniCalendar value={scheduledDate} onChange={setScheduledDate} />
             </div>
 
-            <TargetSplitsEditor splits={targetSplits} onChange={setTargetSplits} />
+            {discipline === 'course' && <TargetSplitsEditor splits={targetSplits} onChange={setTargetSplits} />}
           </Card>
 
           {/* Sous-groupes: contenu différencié par sous-groupe pour la même séance */}
@@ -559,7 +562,9 @@ export default function CoachSessions() {
                           <textarea value={st.content} onChange={(e) => updateSubgroupState(sg.id, { content: e.target.value })} rows={2}
                             placeholder="Contenu spécifique à ce sous-groupe…"
                             className="w-full rounded-[10px] px-3 py-2 text-sm outline-none resize-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
-                          <TargetSplitsEditor splits={st.targetSplits} onChange={(splits) => updateSubgroupState(sg.id, { targetSplits: splits })} />
+                          {discipline === 'course' && (
+                            <TargetSplitsEditor splits={st.targetSplits} onChange={(splits) => updateSubgroupState(sg.id, { targetSplits: splits })} />
+                          )}
                         </>
                       )}
                     </div>
@@ -569,7 +574,8 @@ export default function CoachSessions() {
             </Card>
           )}
 
-          {/* %VMA auto-calculator — using the real VMA of each athlete in the selected group */}
+          {/* %VMA auto-calculator — using the real VMA of each athlete in the selected group; running only */}
+          {discipline === 'course' && (
           <Card>
             <div className="flex items-center justify-between mb-3">
               <SectionLabel>Allures calculées — {vmaPercent}% VMA</SectionLabel>
@@ -614,6 +620,7 @@ export default function CoachSessions() {
               </div>
             )}
           </Card>
+          )}
 
           {publishError && (
             <p className="text-xs rounded-[10px] px-3 py-2" style={{ background: 'rgba(228,87,74,0.12)', color: '#E4574A' }}>{publishError}</p>

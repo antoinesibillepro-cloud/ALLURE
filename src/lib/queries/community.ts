@@ -69,9 +69,15 @@ export async function ensureWeeklyClubChallenge(clubId: string, coachId: string)
 }
 
 export interface RankingEntry { profileId: string; name: string; value: number; category: string | null }
-export interface WeeklyRankings { km: RankingEntry[]; assiduite: RankingEntry[]; recuperation: RankingEntry[] }
+export interface WeeklyRankings {
+  km: RankingEntry[]
+  assiduite: RankingEntry[]
+  recuperation: RankingEntry[]
+  sommeil: RankingEntry[]
+  rapidite: RankingEntry[]
+}
 
-/** Standing club-wide rankings for the current week: km, assiduité (%), récupération (forme moyenne %). */
+/** Standing club-wide rankings for the current week: km, assiduité (%), récupération (forme moyenne %), sommeil (h), rapidité de validation. */
 export async function fetchWeeklyRankings(clubId: string): Promise<WeeklyRankings> {
   const weekStart = isoDate(startOfWeek(new Date()))
   const weekEnd = isoDate(new Date(startOfWeek(new Date()).getTime() + 7 * 86400000))
@@ -79,7 +85,7 @@ export async function fetchWeeklyRankings(clubId: string): Promise<WeeklyRanking
   const { data: athletes } = await supabase.from('profiles').select('id, name').eq('club_id', clubId).eq('role', 'athlete')
   const profileIds = (athletes ?? []).map((a) => a.id)
   const nameById = new Map((athletes ?? []).map((a) => [a.id, a.name]))
-  if (profileIds.length === 0) return { km: [], assiduite: [], recuperation: [] }
+  if (profileIds.length === 0) return { km: [], assiduite: [], recuperation: [], sommeil: [], rapidite: [] }
 
   // Km this week
   const { data: completions } = await supabase
@@ -171,7 +177,44 @@ export async function fetchWeeklyRankings(clubId: string): Promise<WeeklyRanking
   const km: RankingEntry[] = profileIds.map((id) => ({ profileId: id, name: nameById.get(id) ?? '', value: +((kmByProfile.get(id) ?? 0).toFixed(1)), category: categoryByProfile.get(id) ?? null }))
     .sort((a, b) => b.value - a.value)
 
-  return { km, assiduite, recuperation }
+  // Sommeil: average hours slept over the last 7 days — "défi de récupération",
+  // pure sleep quality rather than the blended forme score above.
+  const sleepSums = new Map<string, { sum: number; count: number }>()
+  for (const row of checkins ?? []) {
+    if (row.sleep === null || row.sleep === undefined) continue
+    const acc = sleepSums.get(row.profile_id) ?? { sum: 0, count: 0 }
+    acc.sum += row.sleep; acc.count += 1
+    sleepSums.set(row.profile_id, acc)
+  }
+  const sommeil: RankingEntry[] = profileIds
+    .filter((id) => sleepSums.has(id))
+    .map((id) => ({ profileId: id, name: nameById.get(id) ?? '', value: +((sleepSums.get(id)!.sum / sleepSums.get(id)!.count).toFixed(1)), category: categoryByProfile.get(id) ?? null }))
+    .sort((a, b) => b.value - a.value)
+
+  // Rapidité: average delay (hours) between a session's scheduled date and
+  // when the athlete actually validated it — "défi d'assiduité", who logs
+  // and validates their sessions fastest. Lower is better.
+  const { data: doneRowsWithSession } = await supabase
+    .from('session_completions')
+    .select('profile_id, completed_at, session:sessions(scheduled_at)')
+    .in('profile_id', profileIds)
+    .eq('status', 'done')
+    .gte('completed_at', weekStart)
+    .lt('completed_at', weekEnd)
+  const delaySums = new Map<string, { sum: number; count: number }>()
+  for (const row of (doneRowsWithSession ?? []) as unknown as { profile_id: string; completed_at: string; session: { scheduled_at: string } | null }[]) {
+    if (!row.session) continue
+    const delayH = Math.max(0, (new Date(row.completed_at).getTime() - new Date(row.session.scheduled_at).getTime()) / 3_600_000)
+    const acc = delaySums.get(row.profile_id) ?? { sum: 0, count: 0 }
+    acc.sum += delayH; acc.count += 1
+    delaySums.set(row.profile_id, acc)
+  }
+  const rapidite: RankingEntry[] = profileIds
+    .filter((id) => delaySums.has(id))
+    .map((id) => ({ profileId: id, name: nameById.get(id) ?? '', value: Math.round(delaySums.get(id)!.sum / delaySums.get(id)!.count), category: categoryByProfile.get(id) ?? null }))
+    .sort((a, b) => a.value - b.value)
+
+  return { km, assiduite, recuperation, sommeil, rapidite }
 }
 
 export interface LeaderboardEntry {

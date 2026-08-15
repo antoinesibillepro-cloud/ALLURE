@@ -12,6 +12,7 @@ import { fetchStrengthMaxes, upsertStrengthMax, deleteStrengthMax, LOAD_PERCENT_
 import { AreaTrendChart } from '../components/charts'
 import BodyDiagram from '../components/BodyDiagram'
 import AthleteDesktopSidebar from '../components/AthleteDesktopSidebar'
+import { useToast } from '../components/Toast'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function paceStr(kmh: number): string {
@@ -85,6 +86,7 @@ function isoDate(d: Date) { return d.toISOString().slice(0, 10) }
 
 export default function TrainingScreen() {
   const { profile } = useApp()
+  const toast = useToast()
   const [selectedDay, setSelectedDay] = useState(now.getDate())
   const [perfTab, setPerfTab] = useState<'allures' | 'musculation'>('allures')
   const [compTab, setCompTab] = useState<'comp' | 'obj'>('comp')
@@ -116,7 +118,7 @@ export default function TrainingScreen() {
   )
   const [newExercise, setNewExercise] = useState('')
   const [newMax, setNewMax] = useState('')
-  const [selectedExercise, setSelectedExercise] = useState<string | null>(null)
+  const [muscuPct, setMuscuPct] = useState(80)
   const [calcDistance, setCalcDistance] = useState('1500')
   const [calcTime, setCalcTime] = useState('4:00')
 
@@ -204,6 +206,12 @@ export default function TrainingScreen() {
     await refetchMaxes()
   }
 
+  async function handleUpdateMax(exercise: string, maxKg: number) {
+    if (!profile || !Number.isFinite(maxKg) || maxKg <= 0) return
+    await upsertStrengthMax(profile.id, exercise, maxKg)
+    await refetchMaxes()
+  }
+
   function handleVmaChange(next: number) {
     setVma(next)
     if (profile) updateVma(profile.id, next)
@@ -274,13 +282,20 @@ export default function TrainingScreen() {
 
   async function handleStravaButton() {
     if (!stravaStatus?.connected) {
-      await connectStrava()
+      try {
+        await connectStrava()
+      } catch {
+        toast('Session expirée, recharge la page puis réessaie', 'error')
+      }
       return
     }
     setSyncing(true)
     try {
       await syncStrava()
       await Promise.all([refetchStravaActivities(), refetchStravaStatus(), refetchLinkedIds(), refetchMonth()])
+      toast('Strava synchronisé')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Synchronisation impossible', 'error')
     } finally {
       setSyncing(false)
     }
@@ -982,25 +997,54 @@ export default function TrainingScreen() {
             </>
           ) : (
             <>
-              <p className="text-base font-bold mb-3" style={{ color: 'var(--text-1)' }}>Maximums</p>
-              <div className="space-y-1.5 mb-4">
-                {!strengthMaxes?.length ? (
-                  <p className="text-sm" style={{ color: 'var(--text-2)' }}>Aucun maximum enregistré.</p>
-                ) : (
-                  strengthMaxes.map((m) => (
-                    <button key={m.id} onClick={() => setSelectedExercise(selectedExercise === m.exercise ? null : m.exercise)}
-                      className="w-full flex items-center justify-between py-2 px-3 rounded-xl"
-                      style={{ background: selectedExercise === m.exercise ? 'rgba(242,196,0,0.12)' : 'var(--surface2)' }}>
-                      <span className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>{m.exercise}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold" style={{ color: '#F2C400' }}>{m.max_kg} kg</span>
-                        <span onClick={(e) => { e.stopPropagation(); handleDeleteMax(m.id) }} className="text-xs font-semibold text-[#E4574A]">×</span>
-                      </div>
-                    </button>
-                  ))
-                )}
+              <p className="text-base font-bold mb-1" style={{ color: 'var(--text-1)' }}>Maximums &amp; calculateur de charge</p>
+              <p className="text-xs mb-3" style={{ color: 'var(--text-2)' }}>
+                Choisis un %1RM pour voir la charge cible sur tous tes exercices d'un coup.
+              </p>
+
+              {/* %1RM selector */}
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {LOAD_PERCENT_TABLE.map((row) => (
+                  <button key={row.pct} onClick={() => setMuscuPct(row.pct)}
+                    className="px-2.5 py-1.5 rounded-full text-xs font-bold transition-all"
+                    style={{
+                      background: muscuPct === row.pct ? '#F2C400' : 'var(--surface2)',
+                      color: muscuPct === row.pct ? '#0E0E0D' : 'var(--text-1)',
+                    }}>
+                    {row.pct}%
+                  </button>
+                ))}
               </div>
-              <div className="flex gap-2 mb-2">
+
+              {!strengthMaxes?.length ? (
+                <p className="text-sm mb-4" style={{ color: 'var(--text-2)' }}>Aucun maximum enregistré — ajoute ton premier exercice ci-dessous.</p>
+              ) : (
+                <div className="rounded-2xl overflow-hidden mb-4" style={{ border: '1px solid var(--border)' }}>
+                  <div className="grid text-[9px] font-bold uppercase tracking-wider px-3 py-2"
+                    style={{ gridTemplateColumns: '1fr 76px 76px 40px 24px', background: 'var(--surface2)', color: 'var(--text-2)' }}>
+                    <span>Exercice</span><span className="text-right">Max</span>
+                    <span className="text-right">Charge {muscuPct}%</span><span className="text-right">Reps</span><span />
+                  </div>
+                  {strengthMaxes.map((m, i) => {
+                    const reps = LOAD_PERCENT_TABLE.find((r) => r.pct === muscuPct)?.reps ?? '—'
+                    return (
+                      <div key={m.id} className="grid items-center px-3 py-2.5 border-b last:border-b-0"
+                        style={{ gridTemplateColumns: '1fr 76px 76px 40px 24px', borderColor: 'var(--border)', background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)' }}>
+                        <span className="text-sm font-semibold truncate pr-1" style={{ color: 'var(--text-1)' }}>{m.exercise}</span>
+                        <input defaultValue={m.max_kg} inputMode="decimal" onBlur={(e) => {
+                          const v = parseFloat(e.target.value.replace(',', '.'))
+                          if (v !== m.max_kg) handleUpdateMax(m.exercise, v)
+                        }} className="text-xs text-right font-mono bg-transparent outline-none w-full" style={{ color: 'var(--text-1)' }} />
+                        <span className="text-xs text-right font-mono font-bold" style={{ color: '#F2C400' }}>{((m.max_kg * muscuPct) / 100).toFixed(1)}</span>
+                        <span className="text-xs text-right" style={{ color: 'var(--text-2)' }}>{reps}</span>
+                        <button onClick={() => handleDeleteMax(m.id)} className="text-xs font-semibold text-[#E4574A] text-right">×</button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              <div className="flex gap-2 mb-5">
                 <input value={newExercise} onChange={(e) => setNewExercise(e.target.value)} placeholder="Exercice (ex: Squat)"
                   className="flex-1 rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
                 <input value={newMax} onChange={(e) => setNewMax(e.target.value)} placeholder="Max kg" inputMode="decimal"
@@ -1008,26 +1052,6 @@ export default function TrainingScreen() {
                 <button onClick={handleSaveMax} disabled={!newExercise.trim() || !newMax}
                   className="text-xs font-bold px-3 py-2 rounded-[10px] disabled:opacity-50 shrink-0" style={{ background: '#F2C400', color: '#0E0E0D' }}>OK</button>
               </div>
-
-              {selectedExercise && (() => {
-                const max = strengthMaxes?.find((m) => m.exercise === selectedExercise)?.max_kg ?? 0
-                return (
-                  <div className="rounded-2xl overflow-hidden mb-5" style={{ border: '1px solid var(--border)' }}>
-                    <div className="grid grid-cols-3 text-[9px] font-bold uppercase tracking-wider px-3 py-2"
-                      style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
-                      <span>% 1RM</span><span className="text-right">Charge</span><span className="text-right">Répétitions</span>
-                    </div>
-                    {LOAD_PERCENT_TABLE.map((row, i) => (
-                      <div key={row.pct} className="grid grid-cols-3 px-3 py-2 border-b last:border-b-0"
-                        style={{ borderColor: 'var(--border)', background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)' }}>
-                        <span className="text-xs font-semibold" style={{ color: 'var(--text-1)' }}>{row.pct}%</span>
-                        <span className="text-xs text-right font-mono" style={{ color: '#F2C400' }}>{((max * row.pct) / 100).toFixed(1)} kg</span>
-                        <span className="text-xs text-right" style={{ color: 'var(--text-2)' }}>{row.reps} reps</span>
-                      </div>
-                    ))}
-                  </div>
-                )
-              })()}
 
               <p className="text-base font-bold mb-3" style={{ color: 'var(--text-1)' }}>Séances</p>
               {!!muscLogs?.length && (

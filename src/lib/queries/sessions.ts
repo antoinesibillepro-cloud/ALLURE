@@ -9,13 +9,16 @@ export interface WorkBlockInput {
   target_splits: number[] // seconds per rep
 }
 
+export type SessionDiscipline = 'course' | 'velo' | 'natation' | 'muscu'
+
 export interface SessionInput {
   title: string
   type: string
   description: string
+  discipline: SessionDiscipline
   duration_min: number
-  distance_km: number
-  vma_percent: number
+  distance_km: number | null
+  vma_percent: number | null
   scheduled_at: string // ISO date
   time_slot?: 'matin' | 'apres-midi' | null
   group_ids: string[]
@@ -32,6 +35,7 @@ export async function createSession(clubId: string, coachId: string, input: Sess
       title: input.title,
       type: input.type,
       description: input.description,
+      discipline: input.discipline,
       duration_min: input.duration_min,
       distance_km: input.distance_km,
       vma_percent: input.vma_percent,
@@ -101,6 +105,7 @@ export interface AthleteSession {
   title: string
   type: string
   description: string | null
+  discipline: SessionDiscipline
   duration_min: number | null
   distance_km: number | null
   vma_percent: number | null
@@ -128,7 +133,7 @@ export async function fetchAthleteSessions(profileId: string, from: string, to: 
 
   const { data: sessions, error } = await supabase
     .from('sessions')
-    .select('id, title, type, description, duration_min, distance_km, vma_percent, scheduled_at')
+    .select('id, title, type, description, discipline, duration_min, distance_km, vma_percent, scheduled_at')
     .in('id', sessionIds)
     .eq('status', 'published')
     .gte('scheduled_at', from)
@@ -144,7 +149,7 @@ export async function fetchAthleteSessions(profileId: string, from: string, to: 
   if (compErr) throw compErr
   const byId = new Map((completions ?? []).map((c) => [c.session_id, c]))
 
-  return (sessions ?? []).map((s) => ({ ...s, completion: byId.get(s.id) ?? null }))
+  return (sessions ?? []).map((s) => ({ ...s, discipline: s.discipline as SessionDiscipline, completion: byId.get(s.id) ?? null }))
 }
 
 export async function validateSession(
@@ -204,7 +209,7 @@ export async function logFreeSession(profileId: string, title: string, distanceK
 export async function fetchCoachSessions(clubId: string) {
   const { data, error } = await supabase
     .from('sessions')
-    .select('id, title, type, description, duration_min, distance_km, vma_percent, scheduled_at, status, session_assignments(group_id, groups(name))')
+    .select('id, title, type, description, discipline, duration_min, distance_km, vma_percent, scheduled_at, status, session_assignments(group_id, groups(name))')
     .eq('club_id', clubId)
     .order('scheduled_at', { ascending: false })
   if (error) throw error

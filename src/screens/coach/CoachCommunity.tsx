@@ -7,8 +7,8 @@ import { fetchGroups, type GroupWithMembers } from '../../lib/queries/groups'
 import { fetchClubActivityFeed, type ActivityItem } from '../../lib/queries/coachStats'
 
 const KIND_LABEL: Record<string, string> = { km: 'km', sessions: 'séances', attendance: 'bilans' }
-const RANKING_LABEL: Record<keyof WeeklyRankings, string> = { km: 'Kilomètres', assiduite: 'Assiduité', recuperation: 'Récupération' }
-const RANKING_UNIT: Record<keyof WeeklyRankings, string> = { km: 'km', assiduite: '%', recuperation: '%' }
+const RANKING_LABEL: Record<keyof WeeklyRankings, string> = { km: 'Kilomètres', assiduite: 'Assiduité', recuperation: 'Récupération', sommeil: 'Défi sommeil', rapidite: "Défi d'assiduité" }
+const RANKING_UNIT: Record<keyof WeeklyRankings, string> = { km: 'km', assiduite: '%', recuperation: '%', sommeil: 'h', rapidite: 'h' }
 const MEDAL_COLOR: Record<number, string> = { 0: '#F2C400', 1: '#C7CDD6', 2: '#C4794F' }
 
 function IcTrophy({ color = 'currentColor', size = 14 }: { color?: string; size?: number }) {
@@ -106,7 +106,7 @@ function RankBadge({ rank }: { rank: number }) {
 }
 
 function RankingsTab({ rankings }: { rankings: WeeklyRankings | null | undefined }) {
-  const keys: (keyof WeeklyRankings)[] = ['km', 'assiduite', 'recuperation']
+  const keys: (keyof WeeklyRankings)[] = ['km', 'assiduite', 'recuperation', 'sommeil', 'rapidite']
   return (
     <div className="space-y-3">
       {keys.map((key) => {
@@ -195,7 +195,7 @@ export default function CoachCommunity() {
     [profile?.club_id],
   )
   const { data: rankings } = useQuery<WeeklyRankings>(
-    () => (profile ? fetchWeeklyRankings(profile.club_id) : Promise.resolve({ km: [], assiduite: [], recuperation: [] })),
+    () => (profile ? fetchWeeklyRankings(profile.club_id) : Promise.resolve({ km: [], assiduite: [], recuperation: [], sommeil: [], rapidite: [] })),
     [profile?.club_id],
   )
 

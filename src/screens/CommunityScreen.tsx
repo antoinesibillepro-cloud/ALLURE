@@ -74,8 +74,8 @@ function BadgesGrid({ profileId }: { profileId: string }) {
   )
 }
 
-const RANKING_LABEL: Record<keyof WeeklyRankings, string> = { km: 'Kilomètres', assiduite: 'Assiduité', recuperation: 'Récupération' }
-const RANKING_UNIT: Record<keyof WeeklyRankings, string> = { km: 'km', assiduite: '%', recuperation: '%' }
+const RANKING_LABEL: Record<keyof WeeklyRankings, string> = { km: 'Kilomètres', assiduite: 'Assiduité', recuperation: 'Récupération', sommeil: 'Défi sommeil', rapidite: "Défi d'assiduité" }
+const RANKING_UNIT: Record<keyof WeeklyRankings, string> = { km: 'km', assiduite: '%', recuperation: '%', sommeil: 'h', rapidite: 'h' }
 
 function IcTrophy({ color = 'currentColor', size = 14 }: { color?: string; size?: number }) {
   return (
@@ -208,7 +208,7 @@ function RankBadge({ rank }: { rank: number }) {
 }
 
 function RankingsTab({ rankings, profileId }: { rankings: WeeklyRankings | null | undefined; profileId: string }) {
-  const keys: (keyof WeeklyRankings)[] = ['km', 'assiduite', 'recuperation']
+  const keys: (keyof WeeklyRankings)[] = ['km', 'assiduite', 'recuperation', 'sommeil', 'rapidite']
   return (
     <div className="space-y-3">
       {keys.map((key) => {
@@ -300,7 +300,7 @@ export default function CommunityScreen() {
     [profile?.club_id],
   )
   const { data: rankings } = useQuery<WeeklyRankings>(
-    () => (profile ? fetchWeeklyRankings(profile.club_id) : Promise.resolve({ km: [], assiduite: [], recuperation: [] })),
+    () => (profile ? fetchWeeklyRankings(profile.club_id) : Promise.resolve({ km: [], assiduite: [], recuperation: [], sommeil: [], rapidite: [] })),
     [profile?.club_id],
   )
 

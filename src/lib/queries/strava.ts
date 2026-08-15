@@ -1,8 +1,21 @@
 import { supabase } from '../supabase'
 
+// A backgrounded/suspended browser tab can miss supabase-js's own background
+// refresh timer, leaving `getSession()` returning a stale, already-expired
+// token — which our Vercel functions correctly reject with 401, making
+// Strava connect/sync silently fail. Proactively refresh first when needed
+// (this is the only place in the app that manually extracts the raw JWT for
+// a custom fetch(); everything else goes through the supabase client, which
+// already refreshes transparently on each request).
 async function authHeader() {
   const { data } = await supabase.auth.getSession()
-  return data.session?.access_token ?? null
+  const session = data.session
+  if (!session) return null
+  if (session.expires_at && session.expires_at * 1000 < Date.now() + 30_000) {
+    const { data: refreshed } = await supabase.auth.refreshSession()
+    return refreshed.session?.access_token ?? session.access_token ?? null
+  }
+  return session.access_token ?? null
 }
 
 export async function fetchStravaStatus(): Promise<{ connected: boolean; connectedAt: string | null }> {
