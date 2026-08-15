@@ -3,6 +3,7 @@ import { fetchConversations, fetchUnreadCounts, subscribeToAnyMessage } from './
 import { subscribeToOwnMessages, fireNotification } from './lib/notifications'
 import { useApp } from './context/AppContext'
 import AuthScreen from './screens/AuthScreen'
+import ResetPasswordScreen from './screens/ResetPasswordScreen'
 import HomeScreen from './screens/HomeScreen'
 import TrainingScreen from './screens/TrainingScreen'
 import MessagingScreen from './screens/MessagingScreen'
@@ -189,7 +190,7 @@ const C_TITLES: Record<CScreen, string> = {
 }
 
 export default function App() {
-  const { isDark, toggleTheme, session, profile, profileLoading, signOut } = useApp()
+  const { isDark, toggleTheme, session, profile, profileLoading, signOut, passwordRecovery, clearPasswordRecovery } = useApp()
   const [aScreen, setAScreen] = useState<AScreen>('home')
   const [cScreen, setCScreen] = useState<CScreen>('dashboard')
   const [showProfile, setShowProfile] = useState(false)
@@ -251,6 +252,8 @@ export default function App() {
     })
     return () => { cancelled = true; unsub?.() }
   }, [profile?.id, profile?.club_id, profile?.notification_prefs?.messages])
+
+  if (passwordRecovery) return <ResetPasswordScreen onDone={clearPasswordRecovery} />
 
   if (profileLoading) {
     return (

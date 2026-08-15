@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { BtnPrimary } from '../components/ui'
 import { useApp } from '../context/AppContext'
 
-type Mode = 'login' | 'signup'
+type Mode = 'login' | 'signup' | 'forgot'
 
 export default function AuthScreen() {
   const { refreshProfile } = useApp()
@@ -14,6 +14,7 @@ export default function AuthScreen() {
   const [inviteCode, setInviteCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [resetSent, setResetSent] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -23,6 +24,10 @@ export default function AuthScreen() {
       if (mode === 'login') {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) throw error
+      } else if (mode === 'forgot') {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin })
+        if (error) throw error
+        setResetSent(true)
       } else {
         const { data, error } = await supabase.auth.signUp({ email, password })
         if (error) throw error
@@ -44,6 +49,10 @@ export default function AuthScreen() {
     }
   }
 
+  function switchMode(m: Mode) {
+    setMode(m); setError(null); setResetSent(false)
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center px-6" style={{ background: 'var(--bg)' }}>
       <div className="w-full max-w-sm">
@@ -59,60 +68,92 @@ export default function AuthScreen() {
         </div>
 
         <div className="rounded-3xl p-6" style={{ background: 'var(--card)', boxShadow: 'var(--card-shadow)' }}>
-          <div className="flex p-0.5 rounded-xl mb-5" style={{ background: 'var(--surface2)' }}>
-            {(['login', 'signup'] as Mode[]).map((m) => (
-              <button key={m} type="button" onClick={() => { setMode(m); setError(null) }}
-                className="flex-1 py-2 rounded-lg text-xs font-bold transition-all"
-                style={{
-                  background: mode === m ? '#F2C400' : 'transparent',
-                  color: mode === m ? '#0E0E0D' : 'var(--text-2)',
-                }}>
-                {m === 'login' ? 'Connexion' : 'Inscription'}
+          {mode !== 'forgot' && (
+            <div className="flex p-0.5 rounded-xl mb-5" style={{ background: 'var(--surface2)' }}>
+              {(['login', 'signup'] as Mode[]).map((m) => (
+                <button key={m} type="button" onClick={() => switchMode(m)}
+                  className="flex-1 py-2 rounded-lg text-xs font-bold transition-all"
+                  style={{
+                    background: mode === m ? '#F2C400' : 'transparent',
+                    color: mode === m ? '#0E0E0D' : 'var(--text-2)',
+                  }}>
+                  {m === 'login' ? 'Connexion' : 'Inscription'}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {mode === 'forgot' && (
+            <div className="mb-5">
+              <button type="button" onClick={() => switchMode('login')}
+                className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--text-2)' }}>
+                <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                  <path d="M8 2L4 6L8 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Retour à la connexion
               </button>
-            ))}
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-3">
-            {mode === 'signup' && (
-              <div>
-                <label className="text-[10px] uppercase tracking-widest mb-1.5 block" style={{ color: 'var(--text-2)' }}>Nom</label>
-                <input required value={name} onChange={(e) => setName(e.target.value)}
-                  className="w-full rounded-[12px] px-3 py-2.5 text-sm outline-none"
-                  style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
-              </div>
-            )}
-            <div>
-              <label className="text-[10px] uppercase tracking-widest mb-1.5 block" style={{ color: 'var(--text-2)' }}>Email</label>
-              <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-[12px] px-3 py-2.5 text-sm outline-none"
-                style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
-            </div>
-            <div>
-              <label className="text-[10px] uppercase tracking-widest mb-1.5 block" style={{ color: 'var(--text-2)' }}>Mot de passe</label>
-              <input required type="password" minLength={6} value={password} onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-[12px] px-3 py-2.5 text-sm outline-none"
-                style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
-            </div>
-            {mode === 'signup' && (
-              <div>
-                <label className="text-[10px] uppercase tracking-widest mb-1.5 block" style={{ color: 'var(--text-2)' }}>Code d'invitation club</label>
-                <input required value={inviteCode} onChange={(e) => setInviteCode(e.target.value)}
-                  placeholder="Fourni par ton coach"
-                  className="w-full rounded-[12px] px-3 py-2.5 text-sm outline-none"
-                  style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
-              </div>
-            )}
-
-            {error && (
-              <p className="text-xs rounded-[10px] px-3 py-2" style={{ background: 'rgba(228,87,74,0.12)', color: '#E4574A' }}>
-                {error}
+              <p className="text-lg font-black mt-3" style={{ color: 'var(--text-1)' }}>Mot de passe oublié</p>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-2)' }}>
+                Entre ton email, on t'envoie un lien pour choisir un nouveau mot de passe.
               </p>
-            )}
+            </div>
+          )}
 
-            <BtnPrimary className="w-full mt-2" disabled={loading}>
-              {loading ? 'Chargement…' : mode === 'login' ? 'Se connecter' : "S'inscrire"}
-            </BtnPrimary>
-          </form>
+          {mode === 'forgot' && resetSent ? (
+            <div className="rounded-[12px] px-3 py-3 text-sm" style={{ background: 'rgba(94,186,101,0.12)', color: '#5EBA65' }}>
+              Email envoyé à {email} — vérifie ta boîte mail (et les spams).
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-3">
+              {mode === 'signup' && (
+                <div>
+                  <label className="text-[10px] uppercase tracking-widest mb-1.5 block" style={{ color: 'var(--text-2)' }}>Nom</label>
+                  <input required value={name} onChange={(e) => setName(e.target.value)}
+                    className="w-full rounded-[12px] px-3 py-2.5 text-sm outline-none"
+                    style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+                </div>
+              )}
+              <div>
+                <label className="text-[10px] uppercase tracking-widest mb-1.5 block" style={{ color: 'var(--text-2)' }}>Email</label>
+                <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                  className="w-full rounded-[12px] px-3 py-2.5 text-sm outline-none"
+                  style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+              </div>
+              {mode !== 'forgot' && (
+                <div>
+                  <label className="text-[10px] uppercase tracking-widest mb-1.5 block" style={{ color: 'var(--text-2)' }}>Mot de passe</label>
+                  <input required type="password" minLength={6} value={password} onChange={(e) => setPassword(e.target.value)}
+                    className="w-full rounded-[12px] px-3 py-2.5 text-sm outline-none"
+                    style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+                </div>
+              )}
+              {mode === 'login' && (
+                <button type="button" onClick={() => switchMode('forgot')}
+                  className="text-xs font-semibold" style={{ color: '#F2C400' }}>
+                  Mot de passe oublié ?
+                </button>
+              )}
+              {mode === 'signup' && (
+                <div>
+                  <label className="text-[10px] uppercase tracking-widest mb-1.5 block" style={{ color: 'var(--text-2)' }}>Code d'invitation club</label>
+                  <input required value={inviteCode} onChange={(e) => setInviteCode(e.target.value)}
+                    placeholder="Fourni par ton coach"
+                    className="w-full rounded-[12px] px-3 py-2.5 text-sm outline-none"
+                    style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+                </div>
+              )}
+
+              {error && (
+                <p className="text-xs rounded-[10px] px-3 py-2" style={{ background: 'rgba(228,87,74,0.12)', color: '#E4574A' }}>
+                  {error}
+                </p>
+              )}
+
+              <BtnPrimary className="w-full mt-2" disabled={loading}>
+                {loading ? 'Chargement…' : mode === 'login' ? 'Se connecter' : mode === 'forgot' ? 'Envoyer le lien' : "S'inscrire"}
+              </BtnPrimary>
+            </form>
+          )}
         </div>
       </div>
     </div>

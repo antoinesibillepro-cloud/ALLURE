@@ -24,6 +24,9 @@ interface AppCtx {
   profileLoading: boolean
   refreshProfile: () => Promise<void>
   signOut: () => Promise<void>
+  /** True once Supabase detects a password-recovery link was just opened — show the "set new password" screen instead of the app. */
+  passwordRecovery: boolean
+  clearPasswordRecovery: () => void
 }
 
 const Ctx = createContext<AppCtx>({} as AppCtx)
@@ -33,6 +36,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [profileLoading, setProfileLoading] = useState(true)
+  const [passwordRecovery, setPasswordRecovery] = useState(false)
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', isDark)
@@ -54,7 +58,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       else setProfileLoading(false)
     })
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true)
       setSession(newSession)
       if (newSession?.user) {
         setProfileLoading(true)
@@ -77,6 +82,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         profileLoading,
         refreshProfile,
         signOut: async () => { await supabase.auth.signOut() },
+        passwordRecovery,
+        clearPasswordRecovery: () => setPasswordRecovery(false),
       }}
     >
       {children}
