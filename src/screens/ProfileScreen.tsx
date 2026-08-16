@@ -9,6 +9,7 @@ import {
   fetchClubName, fetchReferentCoach, fetchPersonalRecords, createPersonalRecord, deletePersonalRecord,
   fetchInjuries, createInjury, saveNotificationPrefs, uploadAvatar, type PersonalRecord, type Injury, type NotificationPrefs,
 } from '../lib/queries/profileExtras'
+import { fetchAvailability, setAvailability, WEEKDAY_LABELS, type DayAvailability } from '../lib/queries/availability'
 
 const OTHER_INTEGRATIONS = [
   { name: 'Apple Santé' },
@@ -95,6 +96,10 @@ export default function ProfileScreen({ onBack, onOpenAdmin, onOpenRaces, onOpen
     () => (profile && !isCoach ? fetchInjuries(profile.id) : Promise.resolve([])),
     [profile?.id, isCoach],
   )
+  const { data: availability, refetch: refetchAvailability } = useQuery<DayAvailability[]>(
+    () => (profile && !isCoach ? fetchAvailability(profile.id) : Promise.resolve([])),
+    [profile?.id, isCoach],
+  )
 
   const [showAddRecord, setShowAddRecord] = useState(false)
   const [newDiscipline, setNewDiscipline] = useState('')
@@ -148,6 +153,12 @@ export default function ProfileScreen({ onBack, onOpenAdmin, onOpenRaces, onOpen
     } finally {
       setSavingInjury(false)
     }
+  }
+
+  async function handleToggleAvailability(weekday: number, key: 'matin' | 'apres_midi', value: boolean) {
+    if (!profile) return
+    await setAvailability(profile.id, weekday, { [key]: value })
+    await refetchAvailability()
   }
 
   async function handleChangePassword() {
@@ -342,6 +353,36 @@ export default function ProfileScreen({ onBack, onOpenAdmin, onOpenRaces, onOpen
               ))}
             </div>
           )}
+        </Card>
+      )}
+
+      {/* Disponibilités — availability the coach can see before scheduling */}
+      {!isCoach && (
+        <Card>
+          <SectionLabel>Mes disponibilités</SectionLabel>
+          <p className="text-[10px] mt-0.5 mb-3" style={{ color: 'var(--text-2)' }}>
+            Indique quand tu peux t&apos;entraîner — ton coach en tient compte pour organiser les séances.
+          </p>
+          <div className="space-y-1.5">
+            {WEEKDAY_LABELS.map((label, weekday) => {
+              const day = availability?.find((a) => a.weekday === weekday)
+              return (
+                <div key={weekday} className="flex items-center gap-2">
+                  <span className="text-xs font-semibold w-20 shrink-0" style={{ color: 'var(--text-1)' }}>{label}</span>
+                  <button onClick={() => handleToggleAvailability(weekday, 'matin', !(day?.matin ?? true))}
+                    className="flex-1 py-1.5 rounded-[10px] text-[11px] font-bold"
+                    style={{ background: day?.matin ?? true ? 'rgba(242,196,0,0.15)' : 'var(--surface2)', color: day?.matin ?? true ? '#F2C400' : 'var(--text-2)' }}>
+                    Matin
+                  </button>
+                  <button onClick={() => handleToggleAvailability(weekday, 'apres_midi', !(day?.apres_midi ?? true))}
+                    className="flex-1 py-1.5 rounded-[10px] text-[11px] font-bold"
+                    style={{ background: day?.apres_midi ?? true ? 'rgba(242,196,0,0.15)' : 'var(--surface2)', color: day?.apres_midi ?? true ? '#F2C400' : 'var(--text-2)' }}>
+                    Après-midi
+                  </button>
+                </div>
+              )
+            })}
+          </div>
         </Card>
       )}
 

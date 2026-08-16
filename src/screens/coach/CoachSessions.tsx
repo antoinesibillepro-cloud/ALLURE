@@ -195,7 +195,7 @@ function SessionCalendarView({
   const todayIso = isoDateOf(base)
 
   function colorOf(s: CoachSessionRow) { return sessionTypes.find((t) => t.name === s.type)?.color ?? '#F2C400' }
-  const visibleSessions = groupFilter
+  const visibleSessions = groupFilter && groupFilter !== '__all__'
     ? sessions.filter((s) => s.session_assignments.some((a) => a.group_id === groupFilter))
     : sessions
 
@@ -208,7 +208,7 @@ function SessionCalendarView({
   const daySessions = selectedDate ? (byDay.get(selectedDate) ?? []) : []
 
   const topLevel = groups.filter((g) => !g.parent_group_id)
-  const groupLabel = groups.find((g) => g.id === groupFilter)?.name
+  const groupLabel = groupFilter === '__all__' ? 'Vue globale' : groups.find((g) => g.id === groupFilter)?.name
 
   const weekAnchor = new Date(base)
   weekAnchor.setDate(weekAnchor.getDate() + weekOffset * 7)
@@ -248,6 +248,12 @@ function SessionCalendarView({
             className="px-3 py-1.5 rounded-[12px] text-xs font-bold flex items-center gap-1.5" style={{ background: '#F2C400', color: '#0E0E0D' }}>
             {groupLabel}
             <svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M1 1L11 11M11 1L1 11" stroke="#0E0E0D" strokeWidth="1.8" strokeLinecap="round" /></svg>
+          </button>
+        )}
+        {!groupFilter && (
+          <button onClick={() => onGroupFilterChange('__all__')}
+            className="px-3 py-1.5 rounded-[12px] text-xs font-bold transition-all" style={{ background: 'rgba(242,196,0,0.15)', color: '#F2C400' }}>
+            Vue globale (tous les groupes)
           </button>
         )}
         {!groupFilter && topLevel.map((g) => {
@@ -636,6 +642,10 @@ export default function CoachSessions() {
   const [selectedGroupId, setSelectedGroupId] = useState<string>('')
   const [scheduledDate, setScheduledDate] = useState(new Date().toISOString().slice(0, 10))
   const [timeSlot, setTimeSlot] = useState<'matin' | 'apres-midi'>('matin')
+  const [showAddType, setShowAddType] = useState(false)
+  const [showMainChrono, setShowMainChrono] = useState(false)
+  const [showSubgroupContent, setShowSubgroupContent] = useState(false)
+  const [openChronoIds, setOpenChronoIds] = useState<Set<string>>(new Set())
   const [targetSplits, setTargetSplits] = useState<TargetSplitDraft[]>([])
   const [subgroupBlocks, setSubgroupBlocks] = useState<Record<string, SubgroupBlockState>>({})
   const [publishing, setPublishing] = useState(false)
@@ -800,14 +810,21 @@ export default function CoachSessions() {
                     {t.name}
                   </button>
                 ))}
+                {!showAddType && (
+                  <button onClick={() => setShowAddType(true)} className="text-xs font-bold px-3 py-1.5 rounded-[12px]" style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
+                    + Nouveau thème
+                  </button>
+                )}
               </div>
-              <div className="flex items-center gap-2">
-                <input value={newTypeName} onChange={(e) => setNewTypeName(e.target.value)} placeholder="Nouveau thème…"
-                  className="flex-1 rounded-[10px] px-3 py-1.5 text-xs outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
-                <button onClick={handleAddSessionType} disabled={!newTypeName.trim()} className="text-xs font-bold px-2.5 py-1.5 rounded-[10px] disabled:opacity-50" style={{ color: '#F2C400' }}>
-                  + Ajouter
-                </button>
-              </div>
+              {showAddType && (
+                <div className="flex items-center gap-2">
+                  <input value={newTypeName} onChange={(e) => setNewTypeName(e.target.value)} placeholder="Nom du thème…" autoFocus
+                    className="flex-1 rounded-[10px] px-3 py-1.5 text-xs outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
+                  <button onClick={() => { handleAddSessionType(); setShowAddType(false) }} disabled={!newTypeName.trim()} className="text-xs font-bold px-2.5 py-1.5 rounded-[10px] disabled:opacity-50" style={{ color: '#F2C400' }}>
+                    Ajouter
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Numeric fields — distance only for course/vélo/natation, %VMA only for course */}
@@ -886,17 +903,40 @@ export default function CoachSessions() {
               <MiniCalendar value={scheduledDate} onChange={setScheduledDate} />
             </div>
 
-            {discipline === 'course' && <ChronoObjectivesEditor splits={targetSplits} onChange={setTargetSplits} />}
+            {discipline === 'course' && (
+              showMainChrono || targetSplits.length > 0 ? (
+                <ChronoObjectivesEditor splits={targetSplits} onChange={setTargetSplits} />
+              ) : (
+                <button onClick={() => setShowMainChrono(true)} className="text-xs font-bold" style={{ color: '#F2C400' }}>
+                  + Ajouter des objectifs de chrono
+                </button>
+              )
+            )}
           </Card>
 
           {/* Sous-groupes: contenu différencié par sous-groupe pour la même séance */}
-          {subgroups.length > 0 && (
+          {subgroups.length > 0 && (() => {
+            const subgroupsHaveContent = subgroups.some((sg) => {
+              const st = subgroupState(sg.id)
+              return st.isRest || st.content.trim() || st.targetSplits.length > 0
+            })
+            const open = showSubgroupContent || subgroupsHaveContent
+            if (!open) {
+              return (
+                <button onClick={() => setShowSubgroupContent(true)}
+                  className="text-xs font-bold px-4 py-2.5 rounded-[10px] text-left" style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
+                  Différencier le contenu par sous-groupe ▾
+                </button>
+              )
+            }
+            return (
             <Card>
               <SectionLabel>Contenu par sous-groupe</SectionLabel>
               <p className="text-xs mt-1 mb-3" style={{ color: 'var(--text-2)' }}>Laisse vide pour appliquer le contenu ci-dessus à tout le groupe.</p>
               <div className="space-y-3">
                 {subgroups.map((sg) => {
                   const st = subgroupState(sg.id)
+                  const chronoOpen = openChronoIds.has(sg.id) || st.targetSplits.length > 0
                   return (
                     <div key={sg.id} className="rounded-2xl p-3 space-y-2" style={{ background: 'var(--surface2)' }}>
                       <div className="flex items-center justify-between">
@@ -912,7 +952,13 @@ export default function CoachSessions() {
                             placeholder="Contenu spécifique à ce sous-groupe…"
                             className="w-full rounded-[10px] px-3 py-2 text-sm outline-none resize-none" style={{ background: 'var(--card)', color: 'var(--text-1)' }} />
                           {discipline === 'course' && (
-                            <ChronoObjectivesEditor splits={st.targetSplits} onChange={(splits) => updateSubgroupState(sg.id, { targetSplits: splits })} />
+                            chronoOpen ? (
+                              <ChronoObjectivesEditor splits={st.targetSplits} onChange={(splits) => updateSubgroupState(sg.id, { targetSplits: splits })} />
+                            ) : (
+                              <button onClick={() => setOpenChronoIds((prev) => new Set(prev).add(sg.id))} className="text-xs font-bold" style={{ color: '#F2C400' }}>
+                                + Ajouter des objectifs de chrono
+                              </button>
+                            )
                           )}
                         </>
                       )}
@@ -921,7 +967,8 @@ export default function CoachSessions() {
                 })}
               </div>
             </Card>
-          )}
+            )
+          })()}
 
           {/* %VMA auto-calculator — using the real VMA of each athlete in the selected group; running only */}
           {discipline === 'course' && (

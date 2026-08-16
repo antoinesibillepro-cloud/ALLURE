@@ -31,8 +31,12 @@ interface AppCtx {
 
 const Ctx = createContext<AppCtx>({} as AppCtx)
 
+const THEME_KEY = 'allure-theme'
+
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [isDark, setIsDark] = useState(true)
+  const savedTheme = typeof localStorage !== 'undefined' ? localStorage.getItem(THEME_KEY) : null
+  const [isDark, setIsDark] = useState(savedTheme ? savedTheme === 'dark' : true)
+  const [themeExplicit, setThemeExplicit] = useState(savedTheme !== null)
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [profileLoading, setProfileLoading] = useState(true)
@@ -41,6 +45,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.classList.toggle('dark', isDark)
   }, [isDark])
+
+  // Coaches default to light mode, athletes to dark — unless the person already picked a theme themselves.
+  useEffect(() => {
+    if (profile && !themeExplicit) setIsDark(profile.role !== 'coach')
+  }, [profile, themeExplicit])
 
   async function loadProfile(userId: string) {
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle()
@@ -76,7 +85,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     <Ctx.Provider
       value={{
         isDark,
-        toggleTheme: () => setIsDark((v) => !v),
+        toggleTheme: () => setIsDark((v) => {
+          const next = !v
+          setThemeExplicit(true)
+          localStorage.setItem(THEME_KEY, next ? 'dark' : 'light')
+          return next
+        }),
         session,
         profile,
         profileLoading,

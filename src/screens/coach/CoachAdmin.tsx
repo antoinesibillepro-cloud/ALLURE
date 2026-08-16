@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { Card, SectionLabel } from '../../components/ui'
+import { Card, SectionLabel, Avatar } from '../../components/ui'
 import { useApp } from '../../context/AppContext'
 import { useQuery } from '../../lib/useQuery'
 import {
   fetchClubMembers, updateMemberRole, updateMemberName, updateMemberVma, updateMemberGroup, removeMember,
-  updateClubName, resetPasswordEmail, createAccountViaAdmin, sendMemberEmail,
+  updateClubName, resetPasswordEmail, createAccountViaAdmin, sendMemberEmail, bulkWelcomeAthletes,
   fetchClubInvites, createClubInvite, type ClubMember, type ClubInvite,
 } from '../../lib/queries/clubAdmin'
 import { fetchGroups, type GroupWithMembers } from '../../lib/queries/groups'
@@ -67,6 +67,11 @@ export default function CoachAdmin() {
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<string | null>(null)
 
+  const [showBulkConfirm, setShowBulkConfirm] = useState(false)
+  const [bulkSending, setBulkSending] = useState(false)
+  const [bulkResult, setBulkResult] = useState<string | null>(null)
+
+  const [memberDetail, setMemberDetail] = useState<ClubMember | null>(null)
   const [emailTarget, setEmailTarget] = useState<ClubMember | null>(null)
   const [emailSubject, setEmailSubject] = useState('')
   const [emailBody, setEmailBody] = useState('')
@@ -226,6 +231,21 @@ export default function CoachAdmin() {
     await refetchMembers()
   }
 
+  async function handleBulkWelcome() {
+    setBulkSending(true)
+    setBulkResult(null)
+    try {
+      const r = await bulkWelcomeAthletes()
+      if (r.targeted === 0) setBulkResult('Tout le monde a déjà un compte actif — personne à relancer.')
+      else setBulkResult(`${r.sent} email${r.sent > 1 ? 's' : ''} envoyé${r.sent > 1 ? 's' : ''} sur ${r.targeted}${r.failed ? ` (${r.failed} échec${r.failed > 1 ? 's' : ''})` : ''}.`)
+    } catch (err) {
+      setBulkResult(err instanceof Error ? err.message : "Échec de l'envoi")
+    } finally {
+      setBulkSending(false)
+      setShowBulkConfirm(false)
+    }
+  }
+
   async function handleSendEmail() {
     if (!emailTarget || !emailSubject.trim() || !emailBody.trim()) return
     setSendingEmail(true)
@@ -242,6 +262,7 @@ export default function CoachAdmin() {
 
   const athletes = (members ?? []).filter((m) => m.role === 'athlete')
   const coaches = (members ?? []).filter((m) => m.role === 'coach')
+  const detail = memberDetail ? members?.find((x) => x.id === memberDetail.id) ?? memberDetail : null
 
   return (
     <div className="p-4 lg:p-6 space-y-4 max-w-5xl mx-auto pb-10">
@@ -353,8 +374,15 @@ export default function CoachAdmin() {
               className="text-xs font-bold px-3 py-2 rounded-xl" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
               Importer une liste
             </button>
+            <button onClick={() => { setShowBulkConfirm(true); setBulkResult(null) }}
+              className="text-xs font-bold px-3 py-2 rounded-xl" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
+              Relancer les athlètes sans compte actif
+            </button>
           </div>
         </div>
+        {bulkResult && (
+          <p className="mx-4 mb-3 text-xs" style={{ color: bulkResult.includes('échec') || !bulkResult.match(/envoyé|personne/) ? '#E4574A' : '#5EBA65' }}>{bulkResult}</p>
+        )}
 
         {showCreate && (
           <div className="mx-4 mb-4 p-4 rounded-2xl space-y-3" style={{ background: 'var(--surface2)', border: '1px solid var(--border)' }}>
@@ -434,73 +462,94 @@ export default function CoachAdmin() {
           </div>
         )}
 
-        <div className="overflow-x-auto pb-2">
-          <table className="w-full min-w-[720px]">
-            <thead>
-              <tr className="text-left" style={{ borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
-                {['Nom', 'Email', 'Rôle', 'Groupe', 'VMA', 'Actions'].map((h) => (
-                  <th key={h} className="text-[9px] font-bold uppercase tracking-wider px-4 py-2.5" style={{ color: 'var(--text-2)' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {members?.map((m) => (
-                <tr key={m.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td className="px-4 py-2">
-                    <input defaultValue={m.name} onBlur={(e) => handleUpdateName(m, e.target.value)}
-                      className="text-sm font-semibold bg-transparent outline-none w-full" style={{ color: 'var(--text-1)' }} />
-                  </td>
-                  <td className="px-4 py-2">
-                    <span className="text-xs truncate block max-w-[180px]" style={{ color: 'var(--text-2)' }}>{m.email}</span>
-                  </td>
-                  <td className="px-4 py-2">
-                    <select value={m.role} disabled={busyId === m.id || m.id === profile?.id}
-                      onChange={(e) => handleUpdateRole(m, e.target.value as 'athlete' | 'coach')}
-                      className="text-xs rounded-lg px-2 py-1.5 outline-none disabled:opacity-50" style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)' }}>
-                      <option value="athlete">Athlète</option>
-                      <option value="coach">Coach</option>
-                    </select>
-                  </td>
-                  <td className="px-4 py-2">
-                    <select value={m.group_id ?? ''} disabled={busyId === m.id || m.role !== 'athlete'}
-                      onChange={(e) => handleUpdateGroup(m, e.target.value)}
-                      className="text-xs rounded-lg px-2 py-1.5 outline-none disabled:opacity-40 max-w-[140px]" style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)' }}>
-                      <option value="">—</option>
-                      {groups?.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-                    </select>
-                  </td>
-                  <td className="px-4 py-2">
-                    <input type="text" defaultValue={m.vma ?? ''} placeholder="—" inputMode="decimal"
-                      onBlur={(e) => handleUpdateVma(m, e.target.value)}
-                      className="text-sm bg-transparent outline-none w-14" style={{ color: 'var(--text-1)' }} />
-                  </td>
-                  <td className="px-4 py-2">
-                    <div className="flex items-center gap-3 whitespace-nowrap">
-                      {actionMsg?.id === m.id ? (
-                        <span className="text-xs font-semibold" style={{ color: '#5EBA65' }}>{actionMsg.text}</span>
-                      ) : (
-                        <button onClick={() => handleResetPassword(m)} disabled={busyId === m.id} className="text-xs font-semibold underline disabled:opacity-50" style={{ color: 'var(--text-2)' }}>
-                          réinit. mot de passe
-                        </button>
-                      )}
-                      <button onClick={() => { setEmailTarget(m); setEmailSubject(''); setEmailBody(''); setEmailSentMsg(null) }}
-                        className="text-xs font-semibold underline" style={{ color: 'var(--text-2)' }}>
-                        envoyer un email
-                      </button>
-                      {m.id !== profile?.id && (
-                        <button onClick={() => setConfirmRemove(m)} className="text-xs font-semibold" style={{ color: '#E4574A' }}>supprimer</button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="px-2 pb-2" style={{ borderTop: '1px solid var(--border)' }}>
+          {members?.map((m) => (
+            <button key={m.id} onClick={() => setMemberDetail(m)}
+              className="w-full flex items-center gap-3 px-2 py-2.5 text-left" style={{ borderBottom: '1px solid var(--border)' }}>
+              <Avatar initials={m.name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()} size={32} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-1)' }}>{m.name}</p>
+                <p className="text-xs truncate" style={{ color: 'var(--text-2)' }}>{m.email}{m.group_name ? ` · ${m.group_name}` : ''}</p>
+              </div>
+              {m.role === 'coach' && (
+                <span className="text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest shrink-0" style={{ background: '#F2C400', color: '#0E0E0D' }}>Coach</span>
+              )}
+              {m.vma != null && (
+                <span className="text-xs font-bold shrink-0" style={{ color: 'var(--text-2)' }}>{m.vma} km/h</span>
+              )}
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" className="shrink-0"><path d="M4.5 3L7.5 6L4.5 9" stroke="var(--text-2)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </button>
+          ))}
         </div>
-        <p className="text-[10px] px-4 pb-4 pt-1" style={{ color: 'var(--text-2)' }}>
-          Les modifications sont enregistrées dès que tu quittes un champ.
-        </p>
       </Card>
+
+      {detail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
+          <div className="w-full max-w-sm rounded-2xl p-5 space-y-3" style={{ background: 'var(--card)' }}>
+            <div className="flex items-center justify-between">
+              <p className="text-base font-bold" style={{ color: 'var(--text-1)' }}>Gérer ce compte</p>
+              <button onClick={() => setMemberDetail(null)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
+              </button>
+            </div>
+
+            <div>
+              <label className="text-[10px] uppercase tracking-widest mb-1 block" style={{ color: 'var(--text-2)' }}>Nom</label>
+              <input defaultValue={detail.name} onBlur={(e) => handleUpdateName(detail, e.target.value)}
+                className="w-full rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase tracking-widest mb-1 block" style={{ color: 'var(--text-2)' }}>Email</label>
+              <p className="text-sm px-3 py-2" style={{ color: 'var(--text-2)' }}>{detail.email}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] uppercase tracking-widest mb-1 block" style={{ color: 'var(--text-2)' }}>Rôle</label>
+                <select value={detail.role} disabled={busyId === detail.id || detail.id === profile?.id}
+                  onChange={(e) => handleUpdateRole(detail, e.target.value as 'athlete' | 'coach')}
+                  className="w-full rounded-[10px] px-3 py-2 text-sm outline-none disabled:opacity-50" style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)' }}>
+                  <option value="athlete">Athlète</option>
+                  <option value="coach">Coach</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-widest mb-1 block" style={{ color: 'var(--text-2)' }}>VMA</label>
+                <input type="text" defaultValue={detail.vma ?? ''} placeholder="—" inputMode="decimal"
+                  onBlur={(e) => handleUpdateVma(detail, e.target.value)}
+                  className="w-full rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)' }} />
+              </div>
+            </div>
+            {detail.role === 'athlete' && (
+              <div>
+                <label className="text-[10px] uppercase tracking-widest mb-1 block" style={{ color: 'var(--text-2)' }}>Groupe</label>
+                <select value={detail.group_id ?? ''} disabled={busyId === detail.id}
+                  onChange={(e) => handleUpdateGroup(detail, e.target.value)}
+                  className="w-full rounded-[10px] px-3 py-2 text-sm outline-none disabled:opacity-50" style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1px solid var(--border)' }}>
+                  <option value="">Sans groupe</option>
+                  {groups?.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-2 pt-2" style={{ borderTop: '1px solid var(--border)' }}>
+              {actionMsg?.id === detail.id ? (
+                <span className="text-xs font-semibold py-2" style={{ color: '#5EBA65' }}>{actionMsg.text}</span>
+              ) : (
+                <button onClick={() => handleResetPassword(detail)} disabled={busyId === detail.id} className="text-xs font-semibold underline disabled:opacity-50" style={{ color: 'var(--text-2)' }}>
+                  réinit. mot de passe
+                </button>
+              )}
+              <button onClick={() => { setEmailTarget(detail); setEmailSubject(''); setEmailBody(''); setEmailSentMsg(null); setMemberDetail(null) }}
+                className="text-xs font-semibold underline" style={{ color: 'var(--text-2)' }}>
+                envoyer un email
+              </button>
+              {detail.id !== profile?.id && (
+                <button onClick={() => { setConfirmRemove(detail); setMemberDetail(null) }} className="text-xs font-semibold" style={{ color: '#E4574A' }}>supprimer</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {emailTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
@@ -525,6 +574,28 @@ export default function CoachAdmin() {
                 {sendingEmail ? 'Envoi…' : 'Envoyer'}
               </button>
               <button onClick={() => setEmailTarget(null)} className="text-xs font-semibold px-4 py-2.5 rounded-[10px]" style={{ color: 'var(--text-2)' }}>Annuler</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBulkConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
+          <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: 'var(--card)' }}>
+            <p className="text-base font-bold" style={{ color: 'var(--text-1)' }}>Relancer les athlètes sans compte actif ?</p>
+            <p className="text-sm mt-1.5" style={{ color: 'var(--text-2)' }}>
+              Un nouveau mot de passe sera généré et envoyé par email à chaque athlète qui ne s&apos;est encore jamais connecté.
+              Les athlètes qui utilisent déjà leur compte ne seront pas touchés.
+            </p>
+            <div className="flex gap-2 mt-4">
+              <button onClick={handleBulkWelcome} disabled={bulkSending}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+                {bulkSending ? 'Envoi…' : 'Envoyer'}
+              </button>
+              <button onClick={() => setShowBulkConfirm(false)} disabled={bulkSending}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
+                Annuler
+              </button>
             </div>
           </div>
         </div>

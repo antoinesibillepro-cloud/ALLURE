@@ -14,6 +14,35 @@ export type Database = {
   }
   public: {
     Tables: {
+      athlete_availabilities: {
+        Row: {
+          apres_midi: boolean
+          matin: boolean
+          profile_id: string
+          weekday: number
+        }
+        Insert: {
+          apres_midi?: boolean
+          matin?: boolean
+          profile_id: string
+          weekday: number
+        }
+        Update: {
+          apres_midi?: boolean
+          matin?: boolean
+          profile_id?: string
+          weekday?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "athlete_availabilities_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       athlete_badges: {
         Row: {
           badge_id: string

@@ -10,6 +10,7 @@ import {
 } from '../../lib/queries/profileExtras'
 import { fetchDisciplineBreakdown, type DisciplineBreakdown } from '../../lib/queries/crossTraining'
 import { fetchAthleteSessionHistory, type AthleteHistoryEntry } from '../../lib/queries/sessions'
+import { fetchAvailability, WEEKDAY_LABELS, type DayAvailability } from '../../lib/queries/availability'
 import { DonutChart } from '../../components/charts'
 import { useToast } from '../../components/Toast'
 import { SkeletonRows } from '../../components/Skeleton'
@@ -111,6 +112,7 @@ function AthleteDetail({ profileId, name }: { profileId: string; name: string })
   const { data: injuries } = useQuery<Injury[]>(() => fetchInjuries(profileId), [profileId])
   const { data: breakdown } = useQuery<DisciplineBreakdown[]>(() => fetchDisciplineBreakdown(profileId, monthAgo, now.toISOString()), [profileId])
   const { data: history, loading: historyLoading } = useQuery<AthleteHistoryEntry[]>(() => fetchAthleteSessionHistory(profileId, 30), [profileId])
+  const { data: availability } = useQuery<DayAvailability[]>(() => fetchAvailability(profileId), [profileId])
 
   return (
     <div className="space-y-4">
@@ -139,6 +141,28 @@ function AthleteDetail({ profileId, name }: { profileId: string; name: string })
           </div>
         </div>
       </Card>
+
+      {!!availability?.length && (
+        <Card>
+          <SectionLabel>Disponibilités</SectionLabel>
+          <div className="grid grid-cols-7 gap-1 mt-2">
+            {WEEKDAY_LABELS.map((label, weekday) => {
+              const day = availability.find((a) => a.weekday === weekday)
+              const matin = day?.matin ?? true
+              const apresMidi = day?.apres_midi ?? true
+              return (
+                <div key={weekday} className="text-center">
+                  <p className="text-[8px] font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--text-2)' }}>{label.slice(0, 3)}</p>
+                  <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                    <div className="text-[8px] font-bold py-1" style={{ background: matin ? 'rgba(242,196,0,0.15)' : 'var(--surface2)', color: matin ? '#F2C400' : 'var(--text-2)' }}>M</div>
+                    <div className="text-[8px] font-bold py-1" style={{ background: apresMidi ? 'rgba(242,196,0,0.15)' : 'var(--surface2)', color: apresMidi ? '#F2C400' : 'var(--text-2)' }}>A</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+      )}
 
       <Card>
         <SectionLabel>Forme — moyenne 12 semaines</SectionLabel>
