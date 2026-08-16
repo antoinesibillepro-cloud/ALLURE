@@ -262,16 +262,18 @@ export function SessionCalendarView({
         )}
         {!groupFilter && topLevel.map((g) => {
           const children = groups.filter((sg) => sg.parent_group_id === g.id)
+          const allMembers = [...g.members, ...children.flatMap((sg) => sg.members)]
+          const namesTitle = allMembers.map((m) => m.name).join(', ') || 'Aucun athlète'
           return (
             <div key={g.id} className="flex flex-wrap items-center gap-1.5">
-              <button onClick={() => onGroupFilterChange(g.id)}
+              <button onClick={() => onGroupFilterChange(g.id)} title={namesTitle}
                 className="px-3 py-1.5 rounded-[12px] text-xs font-bold transition-all" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
-                {g.name}
+                {g.name} <span className="font-medium" style={{ color: 'var(--text-2)' }}>({allMembers.length})</span>
               </button>
               {children.map((sg) => (
-                <button key={sg.id} onClick={() => onGroupFilterChange(sg.id)}
+                <button key={sg.id} onClick={() => onGroupFilterChange(sg.id)} title={sg.members.map((m) => m.name).join(', ') || 'Aucun athlète'}
                   className="px-2.5 py-1.5 rounded-[12px] text-[11px] font-semibold transition-all" style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
-                  ↳ {sg.name}
+                  ↳ {sg.name} ({sg.members.length})
                 </button>
               ))}
             </div>
@@ -634,7 +636,7 @@ interface SubgroupBlockState {
 
 export default function CoachSessions() {
   const { profile } = useApp()
-  const [tab, setTab] = useState<'calendar' | 'create' | 'groups'>('calendar')
+  const [tab, setTab] = useState<'groups' | 'calendar' | 'create'>('groups')
   const [calMonthOffset, setCalMonthOffset] = useState(0)
   const [calSelectedDate, setCalSelectedDate] = useState<string | null>(null)
   const [calGroupFilter, setCalGroupFilter] = useState<string>('')
@@ -747,7 +749,7 @@ export default function CoachSessions() {
         <h1 className="text-2xl font-black" style={{ color: 'var(--text-1)' }}>Séances</h1>
         <div className="flex items-center gap-2">
           <div className="flex gap-1 p-1 rounded-[12px]" style={{ background: 'var(--card)', boxShadow: 'var(--card-shadow)' }}>
-            {(['calendar', 'create', 'groups'] as const).map((t) => (
+            {(['groups', 'calendar', 'create'] as const).map((t) => (
               <button key={t} onClick={() => setTab(t)}
                 className="px-3 py-1.5 rounded-[10px] text-xs font-bold transition-all capitalize"
                 style={{ background: tab === t ? '#F2C400' : 'transparent', color: tab === t ? '#0E0E0D' : 'var(--text-2)' }}>

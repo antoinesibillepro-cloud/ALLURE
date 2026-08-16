@@ -200,20 +200,25 @@ export default function GroupsManagerTab({ onCreateSession }: { onCreateSession:
       ) : (
         <>
           <div className="flex gap-2 overflow-x-auto pb-0.5">
-            {topGroups.map((g) => (
-              <button key={g.id} onClick={() => setActiveGroupId(g.id)}
-                className="shrink-0 flex flex-col items-start px-4 py-3 rounded-2xl transition-all"
-                style={{
-                  background: group?.id === g.id ? '#F2C400' : 'var(--card)',
-                  boxShadow: group?.id === g.id ? 'none' : 'var(--card-shadow)',
-                  minWidth: 140,
-                }}>
-                <p className="text-sm font-bold leading-none" style={{ color: group?.id === g.id ? '#0E0E0D' : 'var(--text-1)' }}>{g.name}</p>
-                <p className="text-[10px] mt-1" style={{ color: group?.id === g.id ? 'rgba(0,0,0,0.6)' : 'var(--text-2)' }}>
-                  {g.members.length} athlète{g.members.length > 1 ? 's' : ''}
-                </p>
-              </button>
-            ))}
+            {topGroups.map((g) => {
+              const subMembers = (groups ?? []).filter((sg) => sg.parent_group_id === g.id).flatMap((sg) => sg.members)
+              const allMembers = [...g.members, ...subMembers]
+              const names = allMembers.slice(0, 3).map((m) => m.name.split(' ')[0]).join(', ')
+              return (
+                <button key={g.id} onClick={() => setActiveGroupId(g.id)}
+                  className="shrink-0 flex flex-col items-start px-4 py-3 rounded-2xl transition-all text-left"
+                  style={{
+                    background: group?.id === g.id ? '#F2C400' : 'var(--card)',
+                    boxShadow: group?.id === g.id ? 'none' : 'var(--card-shadow)',
+                    minWidth: 160, maxWidth: 220,
+                  }}>
+                  <p className="text-sm font-bold leading-none" style={{ color: group?.id === g.id ? '#0E0E0D' : 'var(--text-1)' }}>{g.name}</p>
+                  <p className="text-[10px] mt-1.5 truncate w-full" style={{ color: group?.id === g.id ? 'rgba(0,0,0,0.6)' : 'var(--text-2)' }}>
+                    {allMembers.length === 0 ? 'Aucun athlète' : `${names}${allMembers.length > 3 ? ` +${allMembers.length - 3}` : ''}`}
+                  </p>
+                </button>
+              )
+            })}
           </div>
 
           {group && (
