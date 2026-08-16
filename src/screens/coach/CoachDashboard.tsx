@@ -13,17 +13,28 @@ import { SkeletonRows, Skeleton, CountUp } from '../../components/Skeleton'
 import { useToast } from '../../components/Toast'
 import CoachDesktopSidebar from '../../components/CoachDesktopSidebar'
 import CoachCommunityRail from '../../components/CoachCommunityRail'
+import { SessionCalendarView, type CoachSessionRow } from './CoachSessions'
+import { fetchCoachSessions } from '../../lib/queries/sessions'
+import { fetchGroups, type GroupWithMembers } from '../../lib/queries/groups'
+import { fetchSessionTypes, type SessionTypeRow } from '../../lib/queries/sessionTypes'
 
 const STATUS_LABEL: Record<VigilanceAthlete['status'], string> = { alerte: 'Alerte', attention: 'À surveiller', ok: 'En forme' }
 const STATUS_COLOR: Record<VigilanceAthlete['status'], string> = { alerte: '#E4574A', attention: '#F2C400', ok: '#5EBA65' }
 
-export default function CoachDashboard({ onOpenCommunity, onOpenStats }: { onOpenCommunity: () => void; onOpenStats: () => void }) {
+export default function CoachDashboard({ onOpenCommunity, onOpenStats, onOpenSessions }: { onOpenCommunity: () => void; onOpenStats: () => void; onOpenSessions?: () => void }) {
   const { profile } = useApp()
   const clubId = profile?.club_id ?? ''
 
   const toast = useToast()
   const { data: kpis, loading: kpisLoading } = useQuery(() => (clubId ? fetchClubKpis(clubId) : Promise.resolve(null)), [clubId])
   const { data: groups, loading: groupsLoading } = useQuery(() => (clubId ? fetchGroupCompletionThisWeek(clubId) : Promise.resolve([])), [clubId])
+  const { data: allGroups } = useQuery<GroupWithMembers[]>(() => (clubId ? fetchGroups(clubId) : Promise.resolve([])), [clubId])
+  const { data: sessionTypes } = useQuery<SessionTypeRow[]>(() => (clubId ? fetchSessionTypes(clubId) : Promise.resolve([])), [clubId])
+  const { data: coachSessions, refetch: refetchCoachSessions } = useQuery<CoachSessionRow[]>(
+    () => (clubId ? (fetchCoachSessions(clubId) as unknown as Promise<CoachSessionRow[]>) : Promise.resolve([])),
+    [clubId],
+  )
+  const [calSelectedDate, setCalSelectedDate] = useState<string | null>(null)
   const { data: feed, loading: feedLoading } = useQuery(() => (clubId ? fetchClubActivityFeed(clubId) : Promise.resolve([])), [clubId])
   const { data: vigilance, loading: vigilanceLoading } = useQuery(() => (clubId ? fetchAthleteVigilance(clubId) : Promise.resolve([])), [clubId])
   const toWatch = (vigilance ?? []).filter((v) => v.status !== 'ok')
@@ -92,6 +103,30 @@ export default function CoachDashboard({ onOpenCommunity, onOpenStats }: { onOpe
           </Card>
         ))}
       </div>
+
+      {/* Calendar preview — every session, every group, at a glance */}
+      <div className="flex items-center justify-between">
+        <SectionLabel>Calendrier du club</SectionLabel>
+        {onOpenSessions && (
+          <button onClick={onOpenSessions} className="text-xs font-bold shrink-0" style={{ color: '#F2C400' }}>Ouvrir Séances</button>
+        )}
+      </div>
+      {profile && (
+        <SessionCalendarView
+          hideFilter
+          sessions={coachSessions ?? []}
+          groups={allGroups ?? []}
+          sessionTypes={sessionTypes ?? []}
+          selectedDate={calSelectedDate}
+          onSelectDate={setCalSelectedDate}
+          groupFilter="__all__"
+          onGroupFilterChange={() => {}}
+          onAddOnDate={() => onOpenSessions?.()}
+          onChanged={refetchCoachSessions}
+          clubId={profile.club_id}
+          coachId={profile.id}
+        />
+      )}
 
       {/* Group cards */}
       <SectionLabel>Groupes</SectionLabel>

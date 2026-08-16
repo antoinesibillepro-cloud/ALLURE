@@ -53,7 +53,7 @@ function IcMoon() {
   )
 }
 
-export default function ProfileScreen({ onBack, onOpenAdmin, onOpenRaces, onOpenGroups, onOpenCommunity }: { onBack: () => void; onOpenAdmin?: () => void; onOpenRaces?: () => void; onOpenGroups?: () => void; onOpenCommunity?: () => void }) {
+export default function ProfileScreen({ onBack, onOpenAdmin, onOpenRaces, onOpenCommunity }: { onBack: () => void; onOpenAdmin?: () => void; onOpenRaces?: () => void; onOpenCommunity?: () => void }) {
   const { isDark, toggleTheme, profile, signOut, refreshProfile } = useApp()
   const isCoach = profile?.role === 'coach'
   const name = profile?.name ?? ''
@@ -497,12 +497,6 @@ export default function ProfileScreen({ onBack, onOpenAdmin, onOpenRaces, onOpen
                 Mettre à jour
               </button>
             </div>
-          )}
-          {onOpenGroups && (
-            <button onClick={onOpenGroups} className="w-full text-left px-4 py-3 rounded-[12px] text-sm font-medium transition-colors md:hidden"
-              style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
-              Groupes
-            </button>
           )}
           {onOpenCommunity && (
             <button onClick={onOpenCommunity} className="w-full text-left px-4 py-3 rounded-[12px] text-sm font-medium transition-colors md:hidden"

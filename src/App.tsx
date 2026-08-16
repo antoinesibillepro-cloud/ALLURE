@@ -10,7 +10,6 @@ import MessagingScreen from './screens/MessagingScreen'
 import StatsScreen from './screens/StatsScreen'
 import ProfileScreen from './screens/ProfileScreen'
 import CoachDashboard from './screens/coach/CoachDashboard'
-import CoachGroups from './screens/coach/CoachGroups'
 import CoachSessions from './screens/coach/CoachSessions'
 import CoachStats from './screens/coach/CoachStats'
 import CoachMessaging from './screens/coach/CoachMessaging'
@@ -82,17 +81,6 @@ function IcAthletes({ active }: { active: boolean }) {
   )
 }
 
-function IcGroups({ active }: { active: boolean }) {
-  const c = active ? '#F2C400' : 'var(--text-2)'
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-      <circle cx="7" cy="7" r="3" stroke={c} strokeWidth="1.5" />
-      <circle cx="14" cy="7" r="3" stroke={c} strokeWidth="1.5" />
-      <path d="M1 17C1 14.5 3.5 12.5 7 12.5C10.5 12.5 13 14.5 13 17" stroke={c} strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M14 12.5C17.5 12.5 19 14.5 19 17" stroke={c} strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  )
-}
 function IcSessions({ active }: { active: boolean }) {
   const c = active ? '#F2C400' : 'var(--text-2)'
   return (
@@ -150,7 +138,7 @@ function IcSettings({ active }: { active: boolean }) {
 }
 // ── Nav config ────────────────────────────────────────
 type AScreen = 'home' | 'training' | 'community' | 'messaging' | 'stats' | 'club'
-type CScreen = 'dashboard' | 'groups' | 'athletes' | 'sessions' | 'community' | 'messaging' | 'clubstats' | 'races' | 'admin'
+type CScreen = 'dashboard' | 'athletes' | 'sessions' | 'community' | 'messaging' | 'clubstats' | 'races' | 'admin'
 
 interface NavItem<T extends string> {
   id: T
@@ -174,7 +162,6 @@ const ATHLETE_NAV: NavItem<AScreen>[] = [
 // ambiently instead, athlete-Home-style.
 const COACH_NAV: NavItem<CScreen>[] = [
   { id: 'dashboard', label: 'Dashboard', short: 'Dashboard', icon: (a) => <IcDashboard active={a} /> },
-  { id: 'groups', label: 'Groupes', short: 'Groupes', icon: (a) => <IcGroups active={a} /> },
   { id: 'athletes', label: 'Athlètes', short: 'Athlètes', icon: (a) => <IcAthletes active={a} /> },
   { id: 'sessions', label: 'Séances', short: 'Séances', icon: (a) => <IcSessions active={a} /> },
   { id: 'messaging', label: 'Messagerie', short: 'Messages', icon: (a) => <IcMessage active={a} /> },
@@ -186,7 +173,7 @@ const A_TITLES: Record<AScreen, string> = {
   home: 'Tableau de bord', training: 'Entraînements', community: 'Communauté', messaging: 'Messagerie', stats: 'Statistiques', club: 'Club',
 }
 const C_TITLES: Record<CScreen, string> = {
-  dashboard: 'Dashboard coach', groups: 'Groupes', athletes: 'Athlètes', sessions: 'Créer une séance', community: 'Communauté', messaging: 'Messagerie', clubstats: 'Statistiques club', races: 'Calendrier de courses', admin: 'Administration du club',
+  dashboard: 'Dashboard coach', athletes: 'Athlètes', sessions: 'Créer une séance', community: 'Communauté', messaging: 'Messagerie', clubstats: 'Statistiques club', races: 'Calendrier de courses', admin: 'Administration du club',
 }
 
 export default function App() {
@@ -288,14 +275,12 @@ export default function App() {
     if (showProfile) return <ProfileScreen onBack={() => setShowProfile(false)}
       onOpenAdmin={isCoach ? () => { setCScreen('admin'); setShowProfile(false) } : undefined}
       onOpenRaces={isCoach ? () => { setCScreen('races'); setShowProfile(false) } : undefined}
-      onOpenGroups={isCoach ? () => { setCScreen('groups'); setShowProfile(false) } : undefined}
       onOpenCommunity={isCoach ? () => { setCScreen('community'); setShowProfile(false) } : undefined} />
     if (isCoach) {
       const openCommunity = () => setCScreen('community')
       const openStats = () => setCScreen('clubstats')
       switch (cScreen) {
-        case 'dashboard': return <CoachDashboard onOpenCommunity={openCommunity} onOpenStats={openStats} />
-        case 'groups':    return <CoachDesktopChrome onOpenCommunity={openCommunity} onOpenStats={openStats}><CoachGroups /></CoachDesktopChrome>
+        case 'dashboard': return <CoachDashboard onOpenCommunity={openCommunity} onOpenStats={openStats} onOpenSessions={() => setCScreen('sessions')} />
         case 'athletes':  return <CoachDesktopChrome onOpenCommunity={openCommunity} onOpenStats={openStats}><CoachAthletes /></CoachDesktopChrome>
         case 'sessions':  return <CoachDesktopChrome onOpenCommunity={openCommunity} onOpenStats={openStats}><CoachSessions /></CoachDesktopChrome>
         case 'community': return <CoachDesktopChrome onOpenCommunity={openCommunity} onOpenStats={openStats}><CoachCommunity /></CoachDesktopChrome>
@@ -326,7 +311,7 @@ export default function App() {
     setShowProfile(false)
     if (isCoach) {
       const dest: Record<SearchResult['kind'], CScreen> = {
-        athlete: 'athletes', group: 'groups', session: 'sessions', race: 'races',
+        athlete: 'athletes', group: 'sessions', session: 'sessions', race: 'races',
       }
       setCScreen(dest[r.kind])
     } else {

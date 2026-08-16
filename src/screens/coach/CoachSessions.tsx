@@ -9,6 +9,7 @@ import {
 } from '../../lib/queries/sessions'
 import { fetchSessionTypes, createSessionType, type SessionTypeRow } from '../../lib/queries/sessionTypes'
 import { fetchOrCreateDm, sendMessage } from '../../lib/queries/messages'
+import GroupsManagerTab from './GroupsManagerTab'
 
 const DISCIPLINE_LABEL: Record<SessionDiscipline, string> = { course: 'Course à pied', velo: 'Vélo', natation: 'Natation', muscu: 'Musculation' }
 const DISCIPLINE_COLOR: Record<SessionDiscipline, string> = { course: '#F2C400', velo: '#5B91D8', natation: '#3DD6C4', muscu: '#C94040' }
@@ -142,7 +143,7 @@ function paceFromDistanceDuration(distanceKm: number | null, durationMin: number
   return `${m}'${s.toString().padStart(2, '0')}"/km`
 }
 
-type CoachSessionRow = {
+export type CoachSessionRow = {
   id: string; title: string; type: string; description: string | null
   discipline: SessionDiscipline
   duration_min: number | null; distance_km: number | null; vma_percent: number | null
@@ -161,8 +162,8 @@ function isoDateOf(d: Date) { return d.toISOString().slice(0, 10) }
  * races calendar, but shows session titles in-cell since sessions are dense
  * (most weekdays have one) rather than sparse dots.
  */
-function SessionCalendarView({
-  sessions, groups, sessionTypes, selectedDate, onSelectDate, groupFilter, onGroupFilterChange, onAddOnDate, onChanged, clubId, coachId,
+export function SessionCalendarView({
+  sessions, groups, sessionTypes, selectedDate, onSelectDate, groupFilter, onGroupFilterChange, onAddOnDate, onChanged, clubId, coachId, hideFilter,
 }: {
   sessions: CoachSessionRow[]
   groups: GroupWithMembers[]
@@ -173,6 +174,8 @@ function SessionCalendarView({
   onGroupFilterChange: (id: string) => void
   onAddOnDate: (iso: string) => void
   onChanged: () => void
+  /** Skip the group picker and its mandatory-selection gate — for read-mostly previews (e.g. the dashboard) that always show every group. */
+  hideFilter?: boolean
   clubId: string
   coachId: string
 }) {
@@ -239,6 +242,7 @@ function SessionCalendarView({
   return (
     <>
       {/* Group filter — a group must be picked before the calendar is usable, to avoid targeting mistakes */}
+      {!hideFilter && (
       <div className="flex flex-wrap items-center gap-2">
         {!groupFilter && (
           <span className="text-xs font-semibold mr-1" style={{ color: 'var(--text-2)' }}>Choisis un groupe :</span>
@@ -274,6 +278,7 @@ function SessionCalendarView({
           )
         })}
       </div>
+      )}
 
       {!groupFilter ? (
         <Card>
@@ -629,7 +634,7 @@ interface SubgroupBlockState {
 
 export default function CoachSessions() {
   const { profile } = useApp()
-  const [tab, setTab] = useState<'calendar' | 'create' | 'library'>('calendar')
+  const [tab, setTab] = useState<'calendar' | 'create' | 'groups'>('calendar')
   const [calMonthOffset, setCalMonthOffset] = useState(0)
   const [calSelectedDate, setCalSelectedDate] = useState<string | null>(null)
   const [calGroupFilter, setCalGroupFilter] = useState<string>('')
@@ -678,7 +683,7 @@ export default function CoachSessions() {
   }
 
   const { data: coachSessions, refetch: refetchCoachSessions } = useQuery<CoachSessionRow[]>(
-    () => (profile && (tab === 'library' || tab === 'calendar') ? (fetchCoachSessions(profile.club_id) as unknown as Promise<CoachSessionRow[]>) : Promise.resolve([])),
+    () => (profile && tab === 'calendar' ? (fetchCoachSessions(profile.club_id) as unknown as Promise<CoachSessionRow[]>) : Promise.resolve([])),
     [profile?.club_id, tab],
   )
 
@@ -742,11 +747,11 @@ export default function CoachSessions() {
         <h1 className="text-2xl font-black" style={{ color: 'var(--text-1)' }}>Séances</h1>
         <div className="flex items-center gap-2">
           <div className="flex gap-1 p-1 rounded-[12px]" style={{ background: 'var(--card)', boxShadow: 'var(--card-shadow)' }}>
-            {(['calendar', 'create', 'library'] as const).map((t) => (
+            {(['calendar', 'create', 'groups'] as const).map((t) => (
               <button key={t} onClick={() => setTab(t)}
                 className="px-3 py-1.5 rounded-[10px] text-xs font-bold transition-all capitalize"
                 style={{ background: tab === t ? '#F2C400' : 'transparent', color: tab === t ? '#0E0E0D' : 'var(--text-2)' }}>
-                {t === 'calendar' ? 'Calendrier' : t === 'create' ? 'Créer' : 'Bibliothèque'}
+                {t === 'calendar' ? 'Calendrier' : t === 'create' ? 'Créer' : 'Groupes'}
               </button>
             ))}
           </div>
@@ -1034,20 +1039,7 @@ export default function CoachSessions() {
         </>
       )}
 
-      {tab === 'library' && (
-        <div className="space-y-3">
-          {!coachSessions?.length ? (
-            <Card>
-              <p className="text-sm text-center py-6" style={{ color: 'var(--text-2)' }}>Aucune séance créée pour l&apos;instant.</p>
-            </Card>
-          ) : (
-            coachSessions.map((s) => profile && (
-              <SessionLibraryRow key={s.id} session={s} onChanged={refetchCoachSessions} clubId={profile.club_id} coachId={profile.id}
-                color={sessionTypes?.find((t) => t.name === s.type)?.color ?? '#F2C400'} />
-            ))
-          )}
-        </div>
-      )}
+      {tab === 'groups' && <GroupsManagerTab />}
     </div>
   )
 }
