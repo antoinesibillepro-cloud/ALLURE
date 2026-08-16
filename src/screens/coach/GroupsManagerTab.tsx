@@ -26,9 +26,11 @@ function FormeBadge({ score }: { score: WellnessScore | undefined }) {
 /**
  * Group + subgroup membership management, folded into Séances (used to be its own nav tab).
  * Picking a top-level group shows its subgroups side by side, each with its athletes —
- * dragging an athlete onto another subgroup's card reassigns them.
+ * dragging an athlete onto another subgroup's card reassigns them, and each group/subgroup
+ * links straight into the Créer tab so the coach can go from "who's in this group" to
+ * "write today's session for them" without hunting for the option.
  */
-export default function GroupsManagerTab() {
+export default function GroupsManagerTab({ onCreateSession }: { onCreateSession: (groupId: string) => void }) {
   const { profile } = useApp()
   const toast = useToast()
   const { data: groups, loading, refetch } = useQuery<GroupWithMembers[]>(
@@ -217,11 +219,21 @@ export default function GroupsManagerTab() {
           {group && (
             <>
               <Card>
-                <SectionLabel>Vue d&apos;ensemble</SectionLabel>
-                <input key={group.id} defaultValue={group.name} onBlur={(e) => handleRenameGroup(group.id, e.target.value)}
-                  className="text-xl font-black bg-transparent outline-none w-full mt-1" style={{ color: 'var(--text-1)' }} />
-                <p className="text-sm mt-0.5" style={{ color: 'var(--text-2)' }}>{clusterMembers.size} athlètes{group.level ? ` · ${group.level}` : ''}</p>
-                {renameError && <p className="text-xs mt-1.5" style={{ color: '#E4574A' }}>{renameError}</p>}
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="flex-1 min-w-[200px]">
+                    <p className="text-[10px] uppercase tracking-widest font-bold" style={{ color: 'var(--text-2)' }}>
+                      {subgroups.length > 0 ? `Sous-groupes de ce groupe (${subgroups.length})` : 'Ce groupe n\'a pas encore de sous-groupe'}
+                    </p>
+                    <input key={group.id} defaultValue={group.name} onBlur={(e) => handleRenameGroup(group.id, e.target.value)}
+                      className="text-xl font-black bg-transparent outline-none w-full mt-1" style={{ color: 'var(--text-1)' }} />
+                    <p className="text-sm mt-0.5" style={{ color: 'var(--text-2)' }}>{clusterMembers.size} athlètes{group.level ? ` · ${group.level}` : ''}</p>
+                    {renameError && <p className="text-xs mt-1.5" style={{ color: '#E4574A' }}>{renameError}</p>}
+                  </div>
+                  <button onClick={() => onCreateSession(group.id)}
+                    className="text-xs font-bold px-4 py-2.5 rounded-[10px] shrink-0" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+                    Créer une séance pour {group.name}
+                  </button>
+                </div>
                 <div className="flex items-center gap-2 mt-3">
                   <input value={newSubgroupName} onChange={(e) => setNewSubgroupName(e.target.value)} placeholder="Ex: Groupe 1"
                     className="flex-1 rounded-[10px] px-3 py-2 text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
@@ -267,17 +279,20 @@ export default function GroupsManagerTab() {
                       onDragLeave={() => setDropTargetId((v) => (v === cg.id ? null : v))}
                       onDrop={(e) => { e.preventDefault(); if (subgroups.length > 0) handleDropOnCluster(cg.id) }}>
                     <Card className="!p-4">
-                      <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center justify-between mb-1 gap-2">
                         {isParent ? (
                           <SectionLabel>{subgroups.length > 0 ? 'Non affecté' : 'Athlètes'}</SectionLabel>
                         ) : (
                           <input key={cg.id} defaultValue={cg.name} onBlur={(e) => handleRenameGroup(cg.id, e.target.value)}
-                            className="text-sm font-bold bg-transparent outline-none" style={{ color: 'var(--text-1)' }} />
+                            className="text-sm font-bold bg-transparent outline-none min-w-0" style={{ color: 'var(--text-1)' }} />
                         )}
                         {!isParent && (
                           <button onClick={() => handleDeleteSubgroup(cg.id)} className="text-[11px] font-semibold shrink-0" style={{ color: '#E4574A' }}>supprimer</button>
                         )}
                       </div>
+                      <button onClick={() => onCreateSession(cg.id)} className="text-[11px] font-bold mb-2" style={{ color: '#F2C400' }}>
+                        + Créer une séance
+                      </button>
                       {members.length === 0 ? (
                         <p className="text-xs py-3 text-center" style={{ color: 'var(--text-2)' }}>
                           {subgroups.length > 0 ? 'Dépose un athlète ici' : 'Aucun athlète pour l\'instant.'}

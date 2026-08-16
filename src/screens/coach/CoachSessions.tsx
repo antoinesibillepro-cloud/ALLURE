@@ -1039,7 +1039,9 @@ export default function CoachSessions() {
         </>
       )}
 
-      {tab === 'groups' && <GroupsManagerTab />}
+      {tab === 'groups' && (
+        <GroupsManagerTab onCreateSession={(groupId) => { setSelectedGroupId(groupId); setTab('create') }} />
+      )}
     </div>
   )
 }
