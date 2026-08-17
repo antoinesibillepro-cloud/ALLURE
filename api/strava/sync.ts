@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { supabaseAdmin, profileIdFromAuthHeader } from '../_lib/supabaseAdmin.js'
-import { refreshStravaToken, fetchRecentActivities } from '../_lib/strava.js'
+import { refreshStravaToken, fetchRecentActivities, fetchActivityLaps } from '../_lib/strava.js'
 
 const RUN_TYPES = new Set(['Run', 'VirtualRun', 'TrailRun'])
 
@@ -13,7 +13,8 @@ const RUN_TYPES = new Set(['Run', 'VirtualRun', 'TrailRun'])
 async function autoCompleteMatchingSessions(
   admin: ReturnType<typeof supabaseAdmin>,
   profileId: string,
-  activities: { id: string; type: string; distance_m: number; moving_time_s: number; start_date: string }[],
+  activities: { id: string; strava_id: number; type: string; distance_m: number; moving_time_s: number; start_date: string }[],
+  accessToken: string,
 ) {
   const runs = activities.filter((a) => RUN_TYPES.has(a.type))
   if (!runs.length) return
@@ -54,7 +55,7 @@ async function autoCompleteMatchingSessions(
     const sessionId = sessionsByDay.get(day)
     if (!sessionId) continue
     sessionsByDay.delete(day) // one activity per session
-    await admin.from('session_completions').upsert({
+    const { data: completion, error: completionErr } = await admin.from('session_completions').upsert({
       session_id: sessionId,
       profile_id: profileId,
       status: 'done',
@@ -62,7 +63,27 @@ async function autoCompleteMatchingSessions(
       actual_duration_min: Math.round(run.moving_time_s / 60),
       completed_at: run.start_date,
       strava_activity_id: run.id,
-    }, { onConflict: 'session_id,profile_id' })
+    }, { onConflict: 'session_id,profile_id' }).select('id').single()
+    if (completionErr || !completion) continue
+
+    // Interval workouts on a watch produce several laps — import them as splits so the
+    // coach sees real rep-by-rep chronos instead of just the aggregate distance/duration.
+    try {
+      const laps = await fetchActivityLaps(accessToken, run.strava_id)
+      if (laps.length > 1) {
+        await admin.from('session_splits').upsert(
+          laps.map((lap) => ({
+            session_completion_id: completion.id,
+            rep_number: lap.lap_index,
+            time_seconds: lap.moving_time,
+            recovery_seconds: lap.elapsed_time > lap.moving_time ? lap.elapsed_time - lap.moving_time : null,
+          })),
+          { onConflict: 'session_completion_id,rep_number' },
+        )
+      }
+    } catch {
+      // Best-effort: a lap-fetch failure shouldn't block marking the session done.
+    }
   }
 }
 
@@ -111,9 +132,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { data: upserted, error: upsertErr } = await admin
         .from('strava_activities')
         .upsert(rows, { onConflict: 'strava_id' })
-        .select('id, type, distance_m, moving_time_s, start_date')
+        .select('id, strava_id, type, distance_m, moving_time_s, start_date')
       if (upsertErr) throw upsertErr
-      await autoCompleteMatchingSessions(admin, profileId, upserted ?? [])
+      await autoCompleteMatchingSessions(admin, profileId, upserted ?? [], accessToken)
     }
 
     return res.status(200).json({ synced: rows.length })

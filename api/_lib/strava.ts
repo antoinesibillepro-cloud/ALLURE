@@ -55,3 +55,19 @@ export async function fetchRecentActivities(accessToken: string, perPage = 30): 
   if (!res.ok) throw new Error(`Strava activities fetch failed: ${res.status} ${await res.text()}`)
   return res.json()
 }
+
+export interface StravaLap {
+  lap_index: number
+  moving_time: number
+  elapsed_time: number
+  distance: number
+}
+
+/** Per-rep laps (manual lap presses or auto-laps) for an activity — the closest Strava gets to interval splits. */
+export async function fetchActivityLaps(accessToken: string, activityId: number): Promise<StravaLap[]> {
+  const res = await fetch(`https://www.strava.com/api/v3/activities/${activityId}/laps`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!res.ok) throw new Error(`Strava laps fetch failed: ${res.status} ${await res.text()}`)
+  return res.json()
+}

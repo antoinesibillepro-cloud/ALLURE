@@ -8,6 +8,7 @@ import {
   updateGroupName, deleteGroup, fetchClubAthletes, type GroupWithMembers,
 } from '../../lib/queries/groups'
 import { fetchLatestWellnessScores, type WellnessScore } from '../../lib/queries/stats'
+import { fetchAvailabilityForProfiles, WEEKDAY_LABELS, type DayAvailability } from '../../lib/queries/availability'
 
 function initialsOf(name: string) {
   return name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
@@ -68,6 +69,12 @@ export default function GroupsManagerTab({ onCreateSession }: { onCreateSession:
   }
   const memberIds = new Set(clusterMembers.keys())
   const availableToAdd = (clubAthletes ?? []).filter((a) => !memberIds.has(a.id))
+
+  const [showAvailability, setShowAvailability] = useState(false)
+  const { data: availabilityByProfile } = useQuery<Record<string, DayAvailability[]>>(
+    () => (showAvailability && memberIds.size ? fetchAvailabilityForProfiles([...memberIds]) : Promise.resolve({})),
+    [showAvailability, group?.id, memberIds.size],
+  )
 
   async function handleCreateGroup() {
     if (!profile || !newGroupName.trim()) return
@@ -267,6 +274,53 @@ export default function GroupsManagerTab({ onCreateSession }: { onCreateSession:
                         <button disabled={busy} onClick={() => handleAddAthlete(a.id)} className="text-xs font-bold" style={{ color: '#F2C400' }}>Ajouter</button>
                       </div>
                     ))}
+                  </div>
+                </Card>
+              )}
+
+              {!showAvailability ? (
+                <button onClick={() => setShowAvailability(true)}
+                  className="text-xs font-bold px-4 py-2.5 rounded-[10px] text-left" style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
+                  Voir les disponibilités du groupe ▾
+                </button>
+              ) : (
+                <Card className="!p-4">
+                  <SectionLabel>Disponibilités du groupe</SectionLabel>
+                  <p className="text-[10px] mt-0.5 mb-2" style={{ color: 'var(--text-2)' }}>M = matin, A = après-midi. Renseigné par chaque athlète depuis son profil.</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs min-w-[520px]">
+                      <thead>
+                        <tr>
+                          <th className="text-left font-semibold pb-1.5 pr-2" style={{ color: 'var(--text-2)' }}>Athlète</th>
+                          {WEEKDAY_LABELS.map((label) => (
+                            <th key={label} className="font-semibold pb-1.5 px-1 text-center" style={{ color: 'var(--text-2)' }}>{label.slice(0, 3)}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...clusterMembers.entries()].map(([id, m]) => {
+                          const days = availabilityByProfile?.[id]
+                          return (
+                            <tr key={id} style={{ borderTop: '1px solid var(--border)' }}>
+                              <td className="py-1.5 pr-2 font-medium truncate max-w-[120px]" style={{ color: 'var(--text-1)' }}>{m.name}</td>
+                              {Array.from({ length: 7 }, (_, weekday) => {
+                                const d = days?.find((x) => x.weekday === weekday)
+                                const matin = d?.matin ?? true
+                                const apresMidi = d?.apres_midi ?? true
+                                return (
+                                  <td key={weekday} className="text-center py-1.5 px-1">
+                                    <div className="inline-flex rounded overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                                      <span className="w-4 h-4 flex items-center justify-center text-[8px] font-bold" style={{ background: matin ? 'rgba(242,196,0,0.18)' : 'var(--surface2)', color: matin ? '#F2C400' : 'var(--text-2)' }}>M</span>
+                                      <span className="w-4 h-4 flex items-center justify-center text-[8px] font-bold" style={{ background: apresMidi ? 'rgba(242,196,0,0.18)' : 'var(--surface2)', color: apresMidi ? '#F2C400' : 'var(--text-2)' }}>A</span>
+                                    </div>
+                                  </td>
+                                )
+                              })}
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 </Card>
               )}

@@ -1,7 +1,7 @@
 import { useState, useEffect, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
-type Sport = 'course' | 'velo' | 'natation' | 'muscu' | 'autre'
+type Sport = 'course' | 'velo' | 'natation' | 'muscu' | 'kine' | 'autre'
 
 function IcCourse({ c }: { c: string }) {
   return <svg width="18" height="18" viewBox="0 0 14 14" fill="none"><path d="M1.5 7H4L5.5 4L8 10L9.5 7H12.5" stroke={c} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -18,12 +18,16 @@ function IcMuscu({ c }: { c: string }) {
 function IcAutre({ c }: { c: string }) {
   return <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke={c} strokeWidth="1.4" /><path d="M10 6.5V10L12.5 12" stroke={c} strokeWidth="1.4" strokeLinecap="round" /></svg>
 }
+function IcKine({ c }: { c: string }) {
+  return <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M10 3V17M3 10H17" stroke={c} strokeWidth="1.8" strokeLinecap="round" /></svg>
+}
 
 const SPORTS: { id: Sport; icon: (c: string) => ReactNode; label: string; color: string }[] = [
   { id: 'course',   icon: (c) => <IcCourse c={c} />,   label: 'Course',      color: '#F2C400' },
   { id: 'velo',     icon: (c) => <IcVelo c={c} />,     label: 'Vélo',        color: '#5B91D8' },
   { id: 'natation', icon: (c) => <IcNatation c={c} />, label: 'Natation',    color: '#7B6FD6' },
   { id: 'muscu',    icon: (c) => <IcMuscu c={c} />,    label: 'Musculation', color: '#E4574A' },
+  { id: 'kine',     icon: (c) => <IcKine c={c} />,     label: 'Kiné',        color: '#EC4899' },
   { id: 'autre',    icon: (c) => <IcAutre c={c} />,    label: 'Autre',       color: '#5EBA65' },
 ]
 
@@ -32,6 +36,7 @@ const DEFAULT_TITLE: Record<Sport, string> = {
   velo: 'Sortie vélo',
   natation: 'Séance natation',
   muscu: 'Séance muscu',
+  kine: 'Séance kiné',
   autre: 'Séance libre',
 }
 
@@ -114,7 +119,7 @@ export default function AddSessionSheet({ date, onClose, onSave }: Props) {
     setTimeout(close, 1200)
   }
 
-  const showDistance = sport !== 'muscu' && sport !== 'autre'
+  const showDistance = sport !== 'muscu' && sport !== 'kine' && sport !== 'autre'
   const sportInfo = SPORTS.find(s => s.id === sport)!
   const pace = showDistance ? paceLabel(sport, distance, duration) : null
 

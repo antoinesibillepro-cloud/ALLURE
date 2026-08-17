@@ -11,8 +11,8 @@ import { fetchSessionTypes, createSessionType, type SessionTypeRow } from '../..
 import { fetchOrCreateDm, sendMessage } from '../../lib/queries/messages'
 import GroupsManagerTab from './GroupsManagerTab'
 
-const DISCIPLINE_LABEL: Record<SessionDiscipline, string> = { course: 'Course à pied', velo: 'Vélo', natation: 'Natation', muscu: 'Musculation' }
-const DISCIPLINE_COLOR: Record<SessionDiscipline, string> = { course: '#F2C400', velo: '#5B91D8', natation: '#3DD6C4', muscu: '#C94040' }
+const DISCIPLINE_LABEL: Record<SessionDiscipline, string> = { course: 'Course à pied', velo: 'Vélo', natation: 'Natation', muscu: 'Musculation', kine: 'Kiné' }
+const DISCIPLINE_COLOR: Record<SessionDiscipline, string> = { course: '#F2C400', velo: '#5B91D8', natation: '#3DD6C4', muscu: '#C94040', kine: '#7B6FD6' }
 
 function MiniCalendar({ value, onChange }: { value: string; onChange: (iso: string) => void }) {
   const [monthOffset, setMonthOffset] = useState(0)
@@ -525,7 +525,7 @@ function SessionLibraryRow({ session, onChanged, clubId, coachId, color, autoExp
               {session.description && <p className="text-sm mb-3" style={{ color: 'var(--text-2)' }}>{session.description}</p>}
               <div className="flex gap-4 mb-3">
                 <span className="text-xs" style={{ color: 'var(--text-2)' }}>{session.duration_min ?? '—'} min</span>
-                {session.discipline !== 'muscu' && (
+                {session.discipline !== 'muscu' && session.discipline !== 'kine' && (
                   <span className="text-xs" style={{ color: 'var(--text-2)' }}>{session.distance_km ?? '—'} km</span>
                 )}
                 {session.discipline === 'course' && (
@@ -639,7 +639,7 @@ export default function CoachSessions() {
   const [tab, setTab] = useState<'groups' | 'calendar' | 'create'>('groups')
   const [calMonthOffset, setCalMonthOffset] = useState(0)
   const [calSelectedDate, setCalSelectedDate] = useState<string | null>(null)
-  const [calGroupFilter, setCalGroupFilter] = useState<string>('')
+  const [calGroupFilter, setCalGroupFilter] = useState<string>('__all__')
   const [sessionType, setSessionType] = useState('')
   const [discipline, setDiscipline] = useState<SessionDiscipline>('course')
   const [duration, setDuration] = useState(55)
@@ -724,7 +724,7 @@ export default function CoachSessions() {
         description,
         discipline,
         duration_min: duration,
-        distance_km: discipline === 'muscu' ? null : distance,
+        distance_km: discipline === 'muscu' || discipline === 'kine' ? null : distance,
         vma_percent: discipline === 'course' ? vmaPercent : null,
         scheduled_at: new Date(scheduledDate).toISOString(),
         time_slot: timeSlot,
@@ -835,10 +835,10 @@ export default function CoachSessions() {
             </div>
 
             {/* Numeric fields — distance only for course/vélo/natation, %VMA only for course */}
-            <div className="grid gap-3 mb-4" style={{ gridTemplateColumns: `repeat(${discipline === 'muscu' ? 1 : discipline === 'course' ? 3 : 2}, minmax(0, 1fr))` }}>
+            <div className="grid gap-3 mb-4" style={{ gridTemplateColumns: `repeat(${discipline === 'muscu' || discipline === 'kine' ? 1 : discipline === 'course' ? 3 : 2}, minmax(0, 1fr))` }}>
               {[
                 { label: 'Durée', value: duration, set: setDuration, unit: 'min', min: 10, max: 180, step: 5, show: true },
-                { label: 'Distance', value: distance, set: setDistance, unit: 'km', min: 1, max: 40, step: 1, show: discipline !== 'muscu' },
+                { label: 'Distance', value: distance, set: setDistance, unit: 'km', min: 1, max: 40, step: 1, show: discipline !== 'muscu' && discipline !== 'kine' },
                 { label: '%VMA', value: vmaPercent, set: setVmaPercent, unit: '%', min: 60, max: 105, step: 1, show: discipline === 'course' },
               ].filter((f) => f.show).map(({ label, value, set, unit, min, max, step }) => (
                 <div key={label} className="rounded-[12px] p-3" style={{ background: 'var(--surface2)' }}>

@@ -15,7 +15,7 @@ export interface WorkBlockInput {
   target_splits: TargetSplitInput[]
 }
 
-export type SessionDiscipline = 'course' | 'velo' | 'natation' | 'muscu'
+export type SessionDiscipline = 'course' | 'velo' | 'natation' | 'muscu' | 'kine'
 
 export interface SessionInput {
   title: string
