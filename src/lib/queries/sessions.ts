@@ -205,17 +205,84 @@ export async function fetchSessionSplits(sessionCompletionId: string): Promise<S
   return data
 }
 
-export async function logFreeSession(profileId: string, title: string, distanceKm: number, durationMin: number, discipline: string) {
-  const { error } = await supabase.from('session_completions').insert({
+export interface FreeSessionInput {
+  title: string
+  distanceKm: number
+  durationMin: number
+  discipline: string
+  rpe: number | null
+  note: string
+  completedAt: string // ISO date
+}
+
+/** Returns the new session_completions id, so splits can be attached to it. */
+export async function logFreeSession(profileId: string, input: FreeSessionInput): Promise<string> {
+  const { data, error } = await supabase.from('session_completions').insert({
     session_id: null,
     profile_id: profileId,
     status: 'free_session',
-    free_session_title: title,
-    free_session_distance_km: distanceKm,
-    free_session_duration_min: durationMin,
-    free_session_discipline: discipline,
-  })
+    free_session_title: input.title,
+    free_session_distance_km: input.distanceKm,
+    free_session_duration_min: input.durationMin,
+    free_session_discipline: input.discipline,
+    rpe: input.rpe,
+    note: input.note || null,
+    completed_at: input.completedAt,
+  }).select('id').single()
   if (error) throw error
+  return data.id
+}
+
+export async function updateFreeSession(id: string, input: FreeSessionInput) {
+  const { error } = await supabase.from('session_completions').update({
+    free_session_title: input.title,
+    free_session_distance_km: input.distanceKm,
+    free_session_duration_min: input.durationMin,
+    free_session_discipline: input.discipline,
+    rpe: input.rpe,
+    note: input.note || null,
+    completed_at: input.completedAt,
+  }).eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteFreeSession(id: string) {
+  const { error } = await supabase.from('session_completions').delete().eq('id', id)
+  if (error) throw error
+}
+
+export interface FreeSession {
+  id: string
+  title: string
+  discipline: string | null
+  distance_km: number | null
+  duration_min: number | null
+  rpe: number | null
+  note: string | null
+  completed_at: string
+}
+
+/** The athlete's own logged (non-coach) sessions in [from, to) — for the training calendar. */
+export async function fetchFreeSessions(profileId: string, from: string, to: string): Promise<FreeSession[]> {
+  const { data, error } = await supabase
+    .from('session_completions')
+    .select('id, free_session_title, free_session_discipline, free_session_distance_km, free_session_duration_min, rpe, note, completed_at')
+    .eq('profile_id', profileId)
+    .eq('status', 'free_session')
+    .gte('completed_at', from)
+    .lt('completed_at', to)
+    .order('completed_at')
+  if (error) throw error
+  return data.map((r) => ({
+    id: r.id,
+    title: r.free_session_title ?? 'Séance libre',
+    discipline: r.free_session_discipline,
+    distance_km: r.free_session_distance_km,
+    duration_min: r.free_session_duration_min,
+    rpe: r.rpe,
+    note: r.note,
+    completed_at: r.completed_at,
+  }))
 }
 
 export async function fetchCoachSessions(clubId: string) {

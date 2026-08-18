@@ -546,7 +546,11 @@ export default function HomeScreen() {
 
   async function handleLogFreeSession(data: SessionData) {
     if (!profile) return
-    await logFreeSession(profile.id, data.title, data.distance ?? 0, data.duration, data.sport)
+    const id = await logFreeSession(profile.id, {
+      title: data.title, distanceKm: data.distance ?? 0, durationMin: data.duration, discipline: data.sport,
+      rpe: data.rpe, note: data.notes, completedAt: new Date().toISOString(),
+    })
+    if (data.splits.length) await saveSessionSplits(id, data.splits.map((s, i) => ({ rep_number: i + 1, ...s })))
   }
 
   // ── Desktop: 3-column grid ──────────────────────────────────────────────

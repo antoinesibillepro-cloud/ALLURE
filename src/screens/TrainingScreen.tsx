@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import { Card, SectionLabel } from '../components/ui'
-import AddSessionSheet, { type SessionData } from '../components/AddSessionSheet'
+import AddSessionSheet, { type SessionData, type InitialSession } from '../components/AddSessionSheet'
 import { useApp } from '../context/AppContext'
 import { useQuery } from '../lib/useQuery'
-import { fetchAthleteSessions, validateSession, logFreeSession, type AthleteSession } from '../lib/queries/sessions'
+import {
+  fetchAthleteSessions, validateSession, logFreeSession, updateFreeSession, deleteFreeSession, fetchFreeSessions,
+  fetchSessionSplits, saveSessionSplits, type AthleteSession, type FreeSession,
+} from '../lib/queries/sessions'
 import { fetchStravaStatus, connectStrava, syncStrava, fetchStravaActivities, fetchLinkedStravaActivityIds, type StravaActivity } from '../lib/queries/strava'
 import { fetchCompetitions, createCompetition, toggleCompetitionDone, deleteCompetition, updateVma, type Competition } from '../lib/queries/profileExtras'
 import { fetchCrossTrainingLogs, createCrossTrainingLog, updateCrossTrainingLog, deleteCrossTrainingLog, fetchWeeklyDisciplineKm, type CrossTrainingLog, type Discipline } from '../lib/queries/crossTraining'
@@ -60,7 +63,7 @@ function distanceLabel(m: number): string {
 }
 
 // ── data ─────────────────────────────────────────────────────────────────────
-type Chip = { id: string; label: string; done: boolean; description: string | null; sessionId: string | null; source: 'session' | 'strava' }
+type Chip = { id: string; label: string; done: boolean; description: string | null; sessionId: string | null; source: 'session' | 'strava' | 'free'; freeSession?: FreeSession }
 
 const VMA_ZONES = [
   { pct: 60, label: 'Footing très cool' },
@@ -91,7 +94,8 @@ export default function TrainingScreen() {
   const [perfTab, setPerfTab] = useState<'allures' | 'musculation'>('allures')
   const [compTab, setCompTab] = useState<'comp' | 'obj'>('comp')
   const [vma, setVma] = useState(profile?.vma ?? 16)
-  const [showAddSession, setShowAddSession] = useState(false)
+  const [sessionSheet, setSessionSheet] = useState<{ mode: 'create' } | { mode: 'edit'; session: FreeSession; initial: InitialSession } | null>(null)
+  const [loadingEditId, setLoadingEditId] = useState<string | null>(null)
   const [validatingId, setValidatingId] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [showAddComp, setShowAddComp] = useState(false)
@@ -305,12 +309,30 @@ export default function TrainingScreen() {
     () => (profile ? fetchAthleteSessions(profile.id, isoDate(monthStart), isoDate(monthEnd)) : Promise.resolve([])),
     [profile?.id, MONTH_LABEL],
   )
+  const { data: freeSessions, refetch: refetchFree } = useQuery<FreeSession[]>(
+    () => (profile ? fetchFreeSessions(profile.id, isoDate(monthStart), isoDate(monthEnd)) : Promise.resolve([])),
+    [profile?.id, MONTH_LABEL],
+  )
 
   const dayChips: Record<number, Chip[]> = {}
   for (const s of monthSessions ?? []) {
     const day = new Date(s.scheduled_at).getDate()
     dayChips[day] = dayChips[day] ?? []
     dayChips[day].push({ id: s.id, label: s.title, done: s.completion?.status === 'done', description: s.description, sessionId: s.id, source: 'session' })
+  }
+  const DISCIPLINE_LABEL: Record<string, string> = { course: 'Course', velo: 'Vélo', natation: 'Natation', muscu: 'Musculation', kine: 'Kiné', autre: 'Autre' }
+  for (const fs of freeSessions ?? []) {
+    const day = new Date(fs.completed_at).getDate()
+    dayChips[day] = dayChips[day] ?? []
+    const descParts = [
+      fs.discipline ? DISCIPLINE_LABEL[fs.discipline] ?? fs.discipline : null,
+      fs.distance_km ? `${fs.distance_km} km` : null,
+      fs.duration_min ? `${fs.duration_min} min` : null,
+    ].filter(Boolean)
+    dayChips[day].push({
+      id: `free-${fs.id}`, label: fs.title, done: true, description: descParts.join(' · ') || null,
+      sessionId: null, source: 'free', freeSession: fs,
+    })
   }
   for (const a of stravaActivities ?? []) {
     if (linkedStravaIds?.has(a.id)) continue // already represented by its matched session chip
@@ -339,10 +361,51 @@ export default function TrainingScreen() {
     }
   }
 
+  function selectedDayIso() {
+    return new Date(now.getFullYear(), now.getMonth(), selectedDay, 12, 0, 0).toISOString()
+  }
+
   async function handleLogFreeSession(data: SessionData) {
     if (!profile) return
-    await logFreeSession(profile.id, data.title, data.distance ?? 0, data.duration, data.sport)
-    await refetchMonth()
+    const id = await logFreeSession(profile.id, {
+      title: data.title, distanceKm: data.distance ?? 0, durationMin: data.duration, discipline: data.sport,
+      rpe: data.rpe, note: data.notes, completedAt: selectedDayIso(),
+    })
+    if (data.splits.length) await saveSessionSplits(id, data.splits.map((s, i) => ({ rep_number: i + 1, ...s })))
+    await refetchFree()
+  }
+
+  async function handleUpdateFreeSessionRow(id: string, completedAt: string, data: SessionData) {
+    await updateFreeSession(id, {
+      title: data.title, distanceKm: data.distance ?? 0, durationMin: data.duration, discipline: data.sport,
+      rpe: data.rpe, note: data.notes, completedAt,
+    })
+    await saveSessionSplits(id, data.splits.map((s, i) => ({ rep_number: i + 1, ...s })))
+    await refetchFree()
+  }
+
+  async function handleDeleteFreeSessionRow(id: string) {
+    await deleteFreeSession(id)
+    await refetchFree()
+  }
+
+  async function openEditFreeSession(fs: FreeSession) {
+    setLoadingEditId(fs.id)
+    try {
+      const splits = await fetchSessionSplits(fs.id)
+      const initial: InitialSession = {
+        sport: (fs.discipline ?? 'course') as InitialSession['sport'],
+        title: fs.title,
+        duration: fs.duration_min ?? 0,
+        distance: fs.distance_km ?? undefined,
+        rpe: fs.rpe ?? 6,
+        notes: fs.note ?? '',
+        splits: splits.map((s) => ({ time: String(s.time_seconds), recovery: s.recovery_seconds != null ? String(s.recovery_seconds) : '' })),
+      }
+      setSessionSheet({ mode: 'edit', session: fs, initial })
+    } finally {
+      setLoadingEditId(null)
+    }
   }
 
   const cells: Array<number | null> = []
@@ -514,33 +577,42 @@ export default function TrainingScreen() {
         </p>
         {dayChips[selectedDay]?.length ? (
           <div className="space-y-2">
-            {dayChips[selectedDay].map((c) => (
-              <div key={c.id} className="flex items-center justify-between py-2.5 px-3 rounded-xl"
-                style={{ background: 'var(--surface2)' }}>
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-2 h-2 rounded-full shrink-0" style={{ background: c.source === 'strava' ? '#FC5200' : c.done ? '#5EBA65' : '#F2C400' }} />
-                  <div className="min-w-0">
-                    <span className="text-sm font-medium block truncate" style={{ color: 'var(--text-1)' }}>{c.label}</span>
-                    {c.description && <span className="text-xs block truncate" style={{ color: 'var(--text-2)' }}>{c.description}</span>}
+            {dayChips[selectedDay].map((c) => {
+              const clickableFree = c.source === 'free' && c.freeSession
+              const Row = clickableFree ? 'button' : 'div'
+              return (
+                <Row key={c.id} onClick={clickableFree ? () => openEditFreeSession(c.freeSession!) : undefined}
+                  className="w-full flex items-center justify-between py-2.5 px-3 rounded-xl text-left"
+                  style={{ background: 'var(--surface2)' }}>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-2 h-2 rounded-full shrink-0" style={{ background: c.source === 'strava' ? '#FC5200' : c.done ? '#5EBA65' : '#F2C400' }} />
+                    <div className="min-w-0">
+                      <span className="text-sm font-medium block truncate" style={{ color: 'var(--text-1)' }}>{c.label}</span>
+                      {c.description && <span className="text-xs block truncate" style={{ color: 'var(--text-2)' }}>{c.description}</span>}
+                    </div>
                   </div>
-                </div>
-                {c.source === 'strava' ? (
-                  <span className="text-xs font-semibold shrink-0" style={{ color: '#FC5200' }}>Strava</span>
-                ) : c.done ? (
-                  <span className="text-xs font-semibold text-[#5EBA65] shrink-0">Réalisée</span>
-                ) : (
-                  <button disabled={validatingId === c.sessionId} onClick={() => c.sessionId && handleValidate(c.sessionId)}
-                    className="text-xs font-bold px-3 py-1 rounded-full text-[#0E0E0D] disabled:opacity-50 shrink-0" style={{ background: '#F2C400' }}>
-                    {validatingId === c.sessionId ? '…' : 'Valider'}
-                  </button>
-                )}
-              </div>
-            ))}
+                  {c.source === 'strava' ? (
+                    <span className="text-xs font-semibold shrink-0" style={{ color: '#FC5200' }}>Strava</span>
+                  ) : c.source === 'free' ? (
+                    <span className="text-xs font-semibold shrink-0" style={{ color: '#5EBA65' }}>
+                      {loadingEditId === c.freeSession?.id ? '…' : 'Modifier'}
+                    </span>
+                  ) : c.done ? (
+                    <span className="text-xs font-semibold text-[#5EBA65] shrink-0">Réalisée</span>
+                  ) : (
+                    <button disabled={validatingId === c.sessionId} onClick={() => c.sessionId && handleValidate(c.sessionId)}
+                      className="text-xs font-bold px-3 py-1 rounded-full text-[#0E0E0D] disabled:opacity-50 shrink-0" style={{ background: '#F2C400' }}>
+                      {validatingId === c.sessionId ? '…' : 'Valider'}
+                    </button>
+                  )}
+                </Row>
+              )
+            })}
           </div>
         ) : (
           <p className="text-sm" style={{ color: 'var(--text-2)' }}>Aucune séance ce jour.</p>
         )}
-        <button onClick={() => setShowAddSession(true)}
+        <button onClick={() => setSessionSheet({ mode: 'create' })}
           className="mt-3 w-full py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
           style={{ border: '1px dashed var(--border)', color: 'var(--text-2)' }}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1.5V10.5M1.5 6H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
@@ -1178,11 +1250,15 @@ export default function TrainingScreen() {
         </div>
       </div>
 
-      {showAddSession && (
+      {sessionSheet && (
         <AddSessionSheet
           date={new Date(now.getFullYear(), now.getMonth(), selectedDay).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-          onClose={() => setShowAddSession(false)}
-          onSave={handleLogFreeSession}
+          initial={sessionSheet.mode === 'edit' ? sessionSheet.initial : undefined}
+          onClose={() => setSessionSheet(null)}
+          onSave={sessionSheet.mode === 'edit'
+            ? (data) => handleUpdateFreeSessionRow(sessionSheet.session.id, sessionSheet.session.completed_at, data)
+            : handleLogFreeSession}
+          onDelete={sessionSheet.mode === 'edit' ? () => handleDeleteFreeSessionRow(sessionSheet.session.id) : undefined}
         />
       )}
     </>

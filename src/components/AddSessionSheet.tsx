@@ -40,10 +40,24 @@ const DEFAULT_TITLE: Record<Sport, string> = {
   autre: 'Séance libre',
 }
 
+export interface SessionSplitInput { time: string; recovery: string }
+
+export interface InitialSession {
+  sport: Sport
+  title: string
+  duration: number
+  distance?: number
+  rpe: number
+  notes: string
+  splits: SessionSplitInput[]
+}
+
 interface Props {
   date?: string
+  initial?: InitialSession
   onClose: () => void
   onSave?: (session: SessionData) => void
+  onDelete?: () => void
 }
 
 export interface SessionData {
@@ -53,6 +67,7 @@ export interface SessionData {
   distance?: number
   rpe: number
   notes: string
+  splits: { time_seconds: number; recovery_seconds: number | null }[]
 }
 
 function paceLabel(sport: Sport, distance: string, duration: number): string | null {
@@ -89,15 +104,17 @@ function RPEColor(rpe: number): string {
   return '#E4574A'
 }
 
-export default function AddSessionSheet({ date, onClose, onSave }: Props) {
+export default function AddSessionSheet({ date, initial, onClose, onSave, onDelete }: Props) {
   const [visible, setVisible] = useState(false)
-  const [sport, setSport] = useState<Sport>('course')
-  const [title, setTitle] = useState(DEFAULT_TITLE['course'])
-  const [duration, setDuration] = useState(60)
-  const [distance, setDistance] = useState('')
-  const [rpe, setRpe] = useState(6)
-  const [notes, setNotes] = useState('')
+  const [sport, setSport] = useState<Sport>(initial?.sport ?? 'course')
+  const [title, setTitle] = useState(initial?.title ?? DEFAULT_TITLE['course'])
+  const [duration, setDuration] = useState(initial?.duration ?? 60)
+  const [distance, setDistance] = useState(initial?.distance != null ? String(initial.distance) : '')
+  const [rpe, setRpe] = useState(initial?.rpe ?? 6)
+  const [notes, setNotes] = useState(initial?.notes ?? '')
+  const [splits, setSplits] = useState<SessionSplitInput[]>(initial?.splits ?? [])
   const [saved, setSaved] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   useEffect(() => { requestAnimationFrame(() => setVisible(true)) }, [])
 
@@ -108,18 +125,30 @@ export default function AddSessionSheet({ date, onClose, onSave }: Props) {
 
   function changeSport(s: Sport) {
     setSport(s)
-    setTitle(DEFAULT_TITLE[s])
+    if (!initial) setTitle(DEFAULT_TITLE[s])
   }
 
   function save() {
-    const data: SessionData = { sport, title, duration, rpe, notes }
+    const parsedSplits = splits
+      .map((s) => ({
+        time_seconds: parseFloat(s.time.replace(',', '.')),
+        recovery_seconds: s.recovery ? parseFloat(s.recovery.replace(',', '.')) : null,
+      }))
+      .filter((s) => !Number.isNaN(s.time_seconds) && s.time_seconds > 0)
+    const data: SessionData = { sport, title, duration, rpe, notes, splits: parsedSplits }
     if (distance) data.distance = parseFloat(distance.replace(',', '.'))
     onSave?.(data)
     setSaved(true)
     setTimeout(close, 1200)
   }
 
+  function handleDelete() {
+    onDelete?.()
+    close()
+  }
+
   const showDistance = sport !== 'muscu' && sport !== 'kine' && sport !== 'autre'
+  const showSplits = sport === 'course' || sport === 'velo' || sport === 'natation'
   const sportInfo = SPORTS.find(s => s.id === sport)!
   const pace = showDistance ? paceLabel(sport, distance, duration) : null
 
@@ -149,7 +178,7 @@ export default function AddSessionSheet({ date, onClose, onSave }: Props) {
           {/* Header */}
           <div className="flex items-center justify-between mb-5">
             <div>
-              <h2 className="text-lg font-black" style={{ color: 'var(--text-1)' }}>Nouvelle séance</h2>
+              <h2 className="text-lg font-black" style={{ color: 'var(--text-1)' }}>{initial ? 'Modifier la séance' : 'Nouvelle séance'}</h2>
               {date && <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>{date}</p>}
             </div>
             <button onClick={close} className="w-8 h-8 rounded-full flex items-center justify-center"
@@ -248,6 +277,39 @@ export default function AddSessionSheet({ date, onClose, onSave }: Props) {
                 </div>
               </div>
 
+              {/* Splits — fractionné intervals, one row per rep */}
+              {showSplits && (
+                <div className="mb-5">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>Fractionné — chronos par répétition (optionnel)</p>
+                    <button onClick={() => setSplits((p) => [...p, { time: '', recovery: '' }])} className="text-xs font-bold" style={{ color: sportInfo.color }}>
+                      + Ajouter
+                    </button>
+                  </div>
+                  {splits.length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 pl-14">
+                        <span className="flex-1 text-[9px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>Temps (sec.)</span>
+                        <span className="flex-1 text-[9px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>Récup (sec.)</span>
+                        <span className="w-4" />
+                      </div>
+                      {splits.map((s, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <span className="text-xs w-12 shrink-0" style={{ color: 'var(--text-2)' }}>Rép. {i + 1}</span>
+                          <input value={s.time} onChange={(e) => setSplits((p) => p.map((v, j) => j === i ? { ...v, time: e.target.value } : v))}
+                            placeholder="sec." inputMode="decimal"
+                            className="flex-1 min-w-0 px-3 py-2 rounded-xl text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1.5px solid var(--border)' }} />
+                          <input value={s.recovery} onChange={(e) => setSplits((p) => p.map((v, j) => j === i ? { ...v, recovery: e.target.value } : v))}
+                            placeholder="sec." inputMode="decimal"
+                            className="flex-1 min-w-0 px-3 py-2 rounded-xl text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1.5px solid var(--border)' }} />
+                          <button onClick={() => setSplits((p) => p.filter((_, j) => j !== i))} className="text-xs shrink-0 w-4" style={{ color: '#E4574A' }}>×</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Notes */}
               <p className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-2)' }}>Notes (optionnel)</p>
               <textarea value={notes} onChange={e => setNotes(e.target.value)}
@@ -262,6 +324,26 @@ export default function AddSessionSheet({ date, onClose, onSave }: Props) {
                 style={{ background: sportInfo.color, boxShadow: `0 4px 20px ${sportInfo.color}55` }}>
                 Enregistrer la séance
               </button>
+
+              {initial && onDelete && (
+                confirmingDelete ? (
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={handleDelete}
+                      className="flex-1 py-3 rounded-2xl font-bold text-sm text-white" style={{ background: '#E4574A' }}>
+                      Confirmer la suppression
+                    </button>
+                    <button onClick={() => setConfirmingDelete(false)}
+                      className="flex-1 py-3 rounded-2xl font-semibold text-sm" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
+                      Annuler
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => setConfirmingDelete(true)}
+                    className="w-full py-3 mt-3 rounded-2xl font-semibold text-sm" style={{ color: '#E4574A' }}>
+                    Supprimer la séance
+                  </button>
+                )
+              )}
             </>
           )}
         </div>
