@@ -1,4 +1,4 @@
-const FROM = 'ALLURE <onboarding@resend.dev>'
+import nodemailer from 'nodemailer'
 
 export interface EmailAttachment {
   filename: string
@@ -6,20 +6,26 @@ export interface EmailAttachment {
   content: string
 }
 
-export async function sendEmail(to: string, subject: string, html: string, attachments?: EmailAttachment[]) {
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ from: FROM, to, subject, html, ...(attachments?.length ? { attachments } : {}) }),
-  })
-  if (!res.ok) {
-    const body = await res.text()
-    throw new Error(`Resend error (${res.status}): ${body}`)
+let cachedTransporter: ReturnType<typeof nodemailer.createTransport> | null = null
+function getTransporter() {
+  if (!cachedTransporter) {
+    cachedTransporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+    })
   }
-  return res.json()
+  return cachedTransporter
+}
+
+/** Sends via Gmail SMTP (no domain verification needed, unlike Resend's sandbox mode). */
+export async function sendEmail(to: string, subject: string, html: string, attachments?: EmailAttachment[]) {
+  await getTransporter().sendMail({
+    from: `ALLURE <${process.env.GMAIL_USER}>`,
+    to,
+    subject,
+    html,
+    attachments: attachments?.map((a) => ({ filename: a.filename, content: a.content, encoding: 'base64' })),
+  })
 }
 
 export function welcomeEmailHtml(name: string, clubName: string, email: string, password: string, appUrl: string) {
