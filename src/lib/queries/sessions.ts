@@ -205,7 +205,7 @@ export async function fetchSessionSplits(sessionCompletionId: string): Promise<S
   return data
 }
 
-export async function logFreeSession(profileId: string, title: string, distanceKm: number, durationMin: number) {
+export async function logFreeSession(profileId: string, title: string, distanceKm: number, durationMin: number, discipline: string) {
   const { error } = await supabase.from('session_completions').insert({
     session_id: null,
     profile_id: profileId,
@@ -213,6 +213,7 @@ export async function logFreeSession(profileId: string, title: string, distanceK
     free_session_title: title,
     free_session_distance_km: distanceKm,
     free_session_duration_min: durationMin,
+    free_session_discipline: discipline,
   })
   if (error) throw error
 }

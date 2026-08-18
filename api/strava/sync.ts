@@ -127,6 +127,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       total_elevation_gain_m: a.total_elevation_gain ?? null,
       average_heartrate: a.average_heartrate ?? null,
       max_heartrate: a.max_heartrate ?? null,
+      average_cadence: a.average_cadence ?? null,
+      average_watts: a.average_watts ?? null,
+      kilojoules: a.kilojoules ?? null,
+      suffer_score: a.suffer_score ?? null,
     }))
     if (rows.length > 0) {
       const { data: upserted, error: upsertErr } = await admin

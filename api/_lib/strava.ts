@@ -46,6 +46,10 @@ export interface StravaActivity {
   total_elevation_gain?: number
   average_heartrate?: number
   max_heartrate?: number
+  average_cadence?: number
+  average_watts?: number
+  kilojoules?: number
+  suffer_score?: number
 }
 
 export async function fetchRecentActivities(accessToken: string, perPage = 30): Promise<StravaActivity[]> {

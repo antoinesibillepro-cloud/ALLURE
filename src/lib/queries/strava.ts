@@ -51,12 +51,16 @@ export interface StravaActivity {
   total_elevation_gain_m: number | null
   average_heartrate: number | null
   max_heartrate: number | null
+  average_cadence: number | null
+  average_watts: number | null
+  kilojoules: number | null
+  suffer_score: number | null
 }
 
 export async function fetchStravaActivities(profileId: string, limit = 10): Promise<StravaActivity[]> {
   const { data, error } = await supabase
     .from('strava_activities')
-    .select('id, name, type, distance_m, moving_time_s, start_date, average_speed_ms, total_elevation_gain_m, average_heartrate, max_heartrate')
+    .select('id, name, type, distance_m, moving_time_s, start_date, average_speed_ms, total_elevation_gain_m, average_heartrate, max_heartrate, average_cadence, average_watts, kilojoules, suffer_score')
     .eq('profile_id', profileId)
     .order('start_date', { ascending: false })
     .limit(limit)

@@ -341,7 +341,7 @@ export default function TrainingScreen() {
 
   async function handleLogFreeSession(data: SessionData) {
     if (!profile) return
-    await logFreeSession(profile.id, data.title, data.distance ?? 0, data.duration)
+    await logFreeSession(profile.id, data.title, data.distance ?? 0, data.duration, data.sport)
     await refetchMonth()
   }
 
@@ -424,6 +424,10 @@ export default function TrainingScreen() {
                         {a.total_elevation_gain_m ? ` · D+ ${Math.round(a.total_elevation_gain_m)}m` : ''}
                         {a.average_heartrate ? ` · ${Math.round(a.average_heartrate)} bpm moy.` : ''}
                         {a.max_heartrate ? ` (max ${Math.round(a.max_heartrate)})` : ''}
+                        {a.average_cadence ? ` · ${Math.round(a.average_cadence)} cad.` : ''}
+                        {a.average_watts ? ` · ${Math.round(a.average_watts)} W` : ''}
+                        {a.kilojoules ? ` · ${Math.round(a.kilojoules)} kJ` : ''}
+                        {a.suffer_score ? ` · effort ${Math.round(a.suffer_score)}` : ''}
                       </p>
                     </div>
                   )
@@ -534,16 +538,14 @@ export default function TrainingScreen() {
             ))}
           </div>
         ) : (
-          <>
-            <p className="text-sm" style={{ color: 'var(--text-2)' }}>Aucune séance ce jour.</p>
-            <button onClick={() => setShowAddSession(true)}
-              className="mt-3 w-full py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
-              style={{ border: '1px dashed var(--border)', color: 'var(--text-2)' }}>
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1.5V10.5M1.5 6H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-              Ajouter une séance ce jour-là
-            </button>
-          </>
+          <p className="text-sm" style={{ color: 'var(--text-2)' }}>Aucune séance ce jour.</p>
         )}
+        <button onClick={() => setShowAddSession(true)}
+          className="mt-3 w-full py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+          style={{ border: '1px dashed var(--border)', color: 'var(--text-2)' }}>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1.5V10.5M1.5 6H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+          Ajouter une séance ce jour-là
+        </button>
       </Card>
     </>
   )

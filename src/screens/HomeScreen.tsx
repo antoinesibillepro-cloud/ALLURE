@@ -10,6 +10,7 @@ import { fetchAthleteWeekStats, fetchAthleteTotalKm, fetchLastActivity } from '.
 import { fetchNextCompetition, fetchMyGroups, fetchWeightLogs, saveWeightLog, type WeightLog } from '../lib/queries/profileExtras'
 import { fetchDisciplineBreakdown, fetchACWR, type DisciplineBreakdown, type ACWRResult } from '../lib/queries/crossTraining'
 import { fetchSessionTypeBreakdown, TYPE_COLORS, type TypeBreakdown } from '../lib/queries/stats'
+import { fetchAvailability, setAvailability, WEEKDAY_LABELS, type DayAvailability } from '../lib/queries/availability'
 import { DonutChart, GenericDonutChart } from '../components/charts'
 import AthleteDesktopSidebar from '../components/AthleteDesktopSidebar'
 
@@ -331,6 +332,15 @@ export default function HomeScreen() {
     () => (profile ? fetchAthleteTotalKm(profile.id) : Promise.resolve(0)),
     [profile?.id],
   )
+  const { data: availability, refetch: refetchAvailability } = useQuery<DayAvailability[]>(
+    () => (profile ? fetchAvailability(profile.id) : Promise.resolve([])),
+    [profile?.id],
+  )
+  async function handleToggleAvailability(weekday: number, key: 'matin' | 'apres_midi', value: boolean) {
+    if (!profile) return
+    await setAvailability(profile.id, weekday, { [key]: value })
+    await refetchAvailability()
+  }
   const { data: lastActivity } = useQuery(
     () => (profile ? fetchLastActivity(profile.id) : Promise.resolve(null)),
     [profile?.id],
@@ -536,7 +546,7 @@ export default function HomeScreen() {
 
   async function handleLogFreeSession(data: SessionData) {
     if (!profile) return
-    await logFreeSession(profile.id, data.title, data.distance ?? 0, data.duration)
+    await logFreeSession(profile.id, data.title, data.distance ?? 0, data.duration, data.sport)
   }
 
   // ── Desktop: 3-column grid ──────────────────────────────────────────────
@@ -746,6 +756,32 @@ export default function HomeScreen() {
           </svg>
           Ajouter une séance libre
         </button>
+        <Card>
+          <SectionLabel>Mes disponibilités</SectionLabel>
+          <p className="text-[10px] mt-0.5 mb-3" style={{ color: 'var(--text-2)' }}>
+            Indique quand tu peux t&apos;entraîner — ton coach en tient compte pour organiser les séances.
+          </p>
+          <div className="space-y-1.5">
+            {WEEKDAY_LABELS.map((label, weekday) => {
+              const day = availability?.find((a) => a.weekday === weekday)
+              return (
+                <div key={weekday} className="flex items-center gap-2">
+                  <span className="text-xs font-semibold w-20 shrink-0" style={{ color: 'var(--text-1)' }}>{label}</span>
+                  <button onClick={() => handleToggleAvailability(weekday, 'matin', !(day?.matin ?? true))}
+                    className="flex-1 py-1.5 rounded-[10px] text-[11px] font-bold"
+                    style={{ background: day?.matin ?? true ? 'rgba(242,196,0,0.15)' : 'var(--surface2)', color: day?.matin ?? true ? '#F2C400' : 'var(--text-2)' }}>
+                    Matin
+                  </button>
+                  <button onClick={() => handleToggleAvailability(weekday, 'apres_midi', !(day?.apres_midi ?? true))}
+                    className="flex-1 py-1.5 rounded-[10px] text-[11px] font-bold"
+                    style={{ background: day?.apres_midi ?? true ? 'rgba(242,196,0,0.15)' : 'var(--surface2)', color: day?.apres_midi ?? true ? '#F2C400' : 'var(--text-2)' }}>
+                    Après-midi
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </Card>
         <div className="grid grid-cols-2 gap-3">
           <div className="card-gradient-blue rounded-[20px] p-4 relative overflow-hidden" style={{ boxShadow: 'var(--card-shadow)' }}>
             <div className="absolute -bottom-4 -right-4 w-16 h-16 rounded-full opacity-20" style={{ background: 'radial-gradient(circle, #5B91D8, transparent)' }} />
@@ -858,6 +894,32 @@ export default function HomeScreen() {
                 )}
               </div>
 
+              <Card>
+                <SectionLabel>Mes disponibilités</SectionLabel>
+                <p className="text-[10px] mt-0.5 mb-3" style={{ color: 'var(--text-2)' }}>
+                  Indique quand tu peux t&apos;entraîner — ton coach en tient compte pour organiser les séances.
+                </p>
+                <div className="grid grid-cols-7 gap-1.5">
+                  {WEEKDAY_LABELS.map((label, weekday) => {
+                    const day = availability?.find((a) => a.weekday === weekday)
+                    return (
+                      <div key={weekday} className="text-center">
+                        <p className="text-[9px] font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--text-2)' }}>{label.slice(0, 3)}</p>
+                        <button onClick={() => handleToggleAvailability(weekday, 'matin', !(day?.matin ?? true))}
+                          className="w-full py-1.5 rounded-t-[8px] text-[10px] font-bold"
+                          style={{ background: day?.matin ?? true ? 'rgba(242,196,0,0.15)' : 'var(--surface2)', color: day?.matin ?? true ? '#F2C400' : 'var(--text-2)' }}>
+                          M
+                        </button>
+                        <button onClick={() => handleToggleAvailability(weekday, 'apres_midi', !(day?.apres_midi ?? true))}
+                          className="w-full py-1.5 rounded-b-[8px] text-[10px] font-bold border-t"
+                          style={{ background: day?.apres_midi ?? true ? 'rgba(242,196,0,0.15)' : 'var(--surface2)', color: day?.apres_midi ?? true ? '#F2C400' : 'var(--text-2)', borderColor: 'var(--bg)' }}>
+                          A
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </Card>
               <WeightCard logs={weightLogs ?? []} onSaved={refetchWeightLogs} profileId={profile?.id ?? ''} />
               {overviewBlock}
             </div>

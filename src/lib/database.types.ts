@@ -815,6 +815,7 @@ export type Database = {
           actual_distance_km: number | null
           actual_duration_min: number | null
           completed_at: string
+          free_session_discipline: string | null
           free_session_distance_km: number | null
           free_session_duration_min: number | null
           free_session_title: string | null
@@ -830,6 +831,7 @@ export type Database = {
           actual_distance_km?: number | null
           actual_duration_min?: number | null
           completed_at?: string
+          free_session_discipline?: string | null
           free_session_distance_km?: number | null
           free_session_duration_min?: number | null
           free_session_title?: string | null
@@ -845,6 +847,7 @@ export type Database = {
           actual_distance_km?: number | null
           actual_duration_min?: number | null
           completed_at?: string
+          free_session_discipline?: string | null
           free_session_distance_km?: number | null
           free_session_duration_min?: number | null
           free_session_title?: string | null
@@ -1148,47 +1151,59 @@ export type Database = {
       }
       strava_activities: {
         Row: {
+          average_cadence: number | null
           average_heartrate: number | null
           average_speed_ms: number | null
+          average_watts: number | null
           created_at: string
           distance_m: number
           id: string
+          kilojoules: number | null
           max_heartrate: number | null
           moving_time_s: number
           name: string
           profile_id: string
           start_date: string
           strava_id: number
+          suffer_score: number | null
           total_elevation_gain_m: number | null
           type: string
         }
         Insert: {
+          average_cadence?: number | null
           average_heartrate?: number | null
           average_speed_ms?: number | null
+          average_watts?: number | null
           created_at?: string
           distance_m?: number
           id?: string
+          kilojoules?: number | null
           max_heartrate?: number | null
           moving_time_s?: number
           name: string
           profile_id: string
           start_date: string
           strava_id: number
+          suffer_score?: number | null
           total_elevation_gain_m?: number | null
           type: string
         }
         Update: {
+          average_cadence?: number | null
           average_heartrate?: number | null
           average_speed_ms?: number | null
+          average_watts?: number | null
           created_at?: string
           distance_m?: number
           id?: string
+          kilojoules?: number | null
           max_heartrate?: number | null
           moving_time_s?: number
           name?: string
           profile_id?: string
           start_date?: string
           strava_id?: number
+          suffer_score?: number | null
           total_elevation_gain_m?: number | null
           type?: string
         }
