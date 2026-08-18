@@ -16,15 +16,16 @@ interface Props {
   initialDistanceKm?: number | null
   initialDurationMin?: number | null
   initialSplits?: ValidationSplit[]
+  initialRpe?: number | null
   onValidated: () => void
 }
 
-/** Full "how did the session go" form: RPE, actual distance/duration (with computed pace), and interval splits — shared between Home and Entraînements so validating a coach-planned session collects the same data everywhere. */
+/** Full "how did the session go" form: RPE, actual distance/duration (with computed pace), and interval splits — shared between Home and Entraînements so validating a coach-planned session collects the same data everywhere. Also used to re-open and correct an already-submitted validation. */
 export default function SessionValidationForm({
   sessionId, profileId, plannedDistanceKm, plannedDurationMin, workBlock, needsConfirmation,
-  initialDistanceKm, initialDurationMin, initialSplits, onValidated,
+  initialDistanceKm, initialDurationMin, initialSplits, initialRpe, onValidated,
 }: Props) {
-  const [rpe, setRpe] = useState<number | null>(null)
+  const [rpe, setRpe] = useState<number | null>(initialRpe ?? null)
   const [actualDistance, setActualDistance] = useState(initialDistanceKm != null ? String(initialDistanceKm) : '')
   const [actualDuration, setActualDuration] = useState(initialDurationMin != null ? String(initialDurationMin) : '')
   const [splits, setSplits] = useState<ValidationSplit[]>(initialSplits ?? [])

@@ -382,9 +382,9 @@ export default function HomeScreen() {
   const myWorkBlock = workBlocks?.find((b) => b.group_id && myGroupIds.has(b.group_id)) ?? null
 
   const needsConfirmation = !!(selectedSession?.completion?.status === 'done' && selectedSession.completion.needs_confirmation)
-  const { data: existingSplits } = useQuery(
-    () => (needsConfirmation && selectedSession?.completion ? fetchSessionSplits(selectedSession.completion.id) : Promise.resolve([])),
-    [selectedSession?.completion?.id, needsConfirmation],
+  const { data: existingSplits, loading: existingSplitsLoading } = useQuery(
+    () => (selectedSession?.completion ? fetchSessionSplits(selectedSession.completion.id) : Promise.resolve([])),
+    [selectedSession?.completion?.id],
   )
 
   async function handleSessionValidated() {
@@ -505,20 +505,25 @@ export default function HomeScreen() {
               </div>
             ))}
           </div>
-          {!isDone && !needsConfirmation && !showRpe && (
+          {!needsConfirmation && !showRpe && (
             <button onClick={() => setShowRpe(true)}
-              className="btn-press w-full mt-4 rounded-[12px] py-3 text-sm font-bold bg-[#F2C400] text-[#0E0E0D]">
-              Valider la séance
+              className="btn-press w-full mt-4 rounded-[12px] py-3 text-sm font-bold"
+              style={{ background: isDone ? 'var(--surface2)' : '#F2C400', color: isDone ? 'var(--text-1)' : '#0E0E0D' }}>
+              {isDone ? 'Modifier ma validation' : 'Valider la séance'}
             </button>
           )}
-          {!isDone && (showRpe || needsConfirmation) && profile && (
+          {(showRpe || needsConfirmation) && existingSplitsLoading && (
+            <p className="text-xs mt-3" style={{ color: 'var(--text-2)' }}>Chargement…</p>
+          )}
+          {(showRpe || needsConfirmation) && !existingSplitsLoading && profile && (
             <SessionValidationForm
               sessionId={selectedSession.id} profileId={profile.id}
               plannedDistanceKm={selectedSession.distance_km} plannedDurationMin={selectedSession.duration_min}
               workBlock={myWorkBlock} needsConfirmation={needsConfirmation}
-              initialDistanceKm={needsConfirmation ? selectedSession.completion?.actual_distance_km : undefined}
-              initialDurationMin={needsConfirmation ? selectedSession.completion?.actual_duration_min : undefined}
-              initialSplits={needsConfirmation ? (existingSplits ?? []).map((s) => ({ time: String(s.time_seconds), recovery: s.recovery_seconds != null ? String(s.recovery_seconds) : '' })) : undefined}
+              initialDistanceKm={selectedSession.completion?.actual_distance_km ?? undefined}
+              initialDurationMin={selectedSession.completion?.actual_duration_min ?? undefined}
+              initialRpe={selectedSession.completion?.rpe ?? undefined}
+              initialSplits={(existingSplits ?? []).map((s) => ({ time: String(s.time_seconds), recovery: s.recovery_seconds != null ? String(s.recovery_seconds) : '' }))}
               onValidated={handleSessionValidated}
             />
           )}
@@ -782,23 +787,28 @@ export default function HomeScreen() {
                     </div>
 
                     {/* Action bar */}
-                    {!isDone && !needsConfirmation && !showRpe && (
+                    {!needsConfirmation && !showRpe && (
                       <div className="flex items-center gap-3 px-4 py-3" style={{ borderTop: '1px solid var(--border)' }}>
                         <button onClick={() => setShowRpe(true)}
-                          className="btn-press flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-[#F2C400] text-[#0E0E0D]">
-                          Valider la séance
+                          className="btn-press flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold"
+                          style={{ background: isDone ? 'var(--surface2)' : '#F2C400', color: isDone ? 'var(--text-1)' : '#0E0E0D' }}>
+                          {isDone ? 'Modifier ma validation' : 'Valider la séance'}
                         </button>
                       </div>
                     )}
-                    {!isDone && (showRpe || needsConfirmation) && profile && (
+                    {(showRpe || needsConfirmation) && existingSplitsLoading && (
+                      <p className="text-xs px-4 pb-4" style={{ color: 'var(--text-2)' }}>Chargement…</p>
+                    )}
+                    {(showRpe || needsConfirmation) && !existingSplitsLoading && profile && (
                       <div className="px-4 pb-4">
                         <SessionValidationForm
                           sessionId={selectedSession.id} profileId={profile.id}
                           plannedDistanceKm={selectedSession.distance_km} plannedDurationMin={selectedSession.duration_min}
                           workBlock={myWorkBlock} needsConfirmation={needsConfirmation}
-                          initialDistanceKm={needsConfirmation ? selectedSession.completion?.actual_distance_km : undefined}
-                          initialDurationMin={needsConfirmation ? selectedSession.completion?.actual_duration_min : undefined}
-                          initialSplits={needsConfirmation ? (existingSplits ?? []).map((s) => ({ time: String(s.time_seconds), recovery: s.recovery_seconds != null ? String(s.recovery_seconds) : '' })) : undefined}
+                          initialDistanceKm={selectedSession.completion?.actual_distance_km ?? undefined}
+                          initialDurationMin={selectedSession.completion?.actual_duration_min ?? undefined}
+                          initialRpe={selectedSession.completion?.rpe ?? undefined}
+                          initialSplits={(existingSplits ?? []).map((s) => ({ time: String(s.time_seconds), recovery: s.recovery_seconds != null ? String(s.recovery_seconds) : '' }))}
                           onValidated={handleSessionValidated}
                         />
                       </div>

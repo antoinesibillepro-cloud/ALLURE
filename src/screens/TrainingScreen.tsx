@@ -385,9 +385,9 @@ export default function TrainingScreen() {
   )
   const myGroupIds = new Set((myGroups ?? []).map((g) => g.id))
   const validatingWorkBlock = validatingWorkBlocks?.find((b) => b.group_id && myGroupIds.has(b.group_id)) ?? null
-  const { data: validatingExistingSplits } = useQuery(
-    () => (validatingChip?.needsConfirmation && validatingSession?.completion ? fetchSessionSplits(validatingSession.completion.id) : Promise.resolve([])),
-    [validatingSession?.completion?.id, validatingChip?.needsConfirmation],
+  const { data: validatingExistingSplits, loading: validatingSplitsLoading } = useQuery(
+    () => (validatingSession?.completion ? fetchSessionSplits(validatingSession.completion.id) : Promise.resolve([])),
+    [validatingSession?.completion?.id],
   )
 
   async function handleLogFreeSession(data: SessionData) {
@@ -624,7 +624,10 @@ export default function TrainingScreen() {
                         {loadingEditId === c.freeSession?.id ? '…' : 'Modifier'}
                       </span>
                     ) : c.done ? (
-                      <span className="text-xs font-semibold text-[#5EBA65] shrink-0">Réalisée</span>
+                      <button onClick={() => c.sessionId && setValidatingSessionId((id) => id === c.sessionId ? null : c.sessionId)}
+                        className="text-xs font-semibold shrink-0 underline" style={{ color: '#5EBA65' }}>
+                        Réalisée · Modifier
+                      </button>
                     ) : (
                       <button onClick={() => c.sessionId && setValidatingSessionId((id) => id === c.sessionId ? null : c.sessionId)}
                         className="text-xs font-bold px-3 py-1 rounded-full shrink-0"
@@ -633,15 +636,19 @@ export default function TrainingScreen() {
                       </button>
                     )}
                   </Row>
-                  {validatingSessionId === c.sessionId && validatingSession && profile && (
+                  {validatingSessionId === c.sessionId && validatingSplitsLoading && (
+                    <p className="text-xs px-3 py-2" style={{ color: 'var(--text-2)' }}>Chargement…</p>
+                  )}
+                  {validatingSessionId === c.sessionId && validatingSession && profile && !validatingSplitsLoading && (
                     <div className="px-3">
                       <SessionValidationForm
                         sessionId={validatingSession.id} profileId={profile.id}
                         plannedDistanceKm={validatingSession.distance_km} plannedDurationMin={validatingSession.duration_min}
                         workBlock={validatingWorkBlock} needsConfirmation={c.needsConfirmation}
-                        initialDistanceKm={c.needsConfirmation ? validatingSession.completion?.actual_distance_km : undefined}
-                        initialDurationMin={c.needsConfirmation ? validatingSession.completion?.actual_duration_min : undefined}
-                        initialSplits={c.needsConfirmation ? (validatingExistingSplits ?? []).map((s) => ({ time: String(s.time_seconds), recovery: s.recovery_seconds != null ? String(s.recovery_seconds) : '' })) : undefined}
+                        initialDistanceKm={validatingSession.completion?.actual_distance_km ?? undefined}
+                        initialDurationMin={validatingSession.completion?.actual_duration_min ?? undefined}
+                        initialRpe={validatingSession.completion?.rpe ?? undefined}
+                        initialSplits={(validatingExistingSplits ?? []).map((s) => ({ time: String(s.time_seconds), recovery: s.recovery_seconds != null ? String(s.recovery_seconds) : '' }))}
                         onValidated={async () => { await refetchMonth(); setValidatingSessionId(null) }}
                       />
                     </div>
