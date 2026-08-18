@@ -68,6 +68,41 @@ export async function fetchStravaActivities(profileId: string, limit = 10): Prom
   return data
 }
 
+export interface StravaStatsSummary {
+  count: number
+  totalElevationM: number
+  avgHeartrate: number | null
+  avgCadence: number | null
+  avgWatts: number | null
+  totalKilojoules: number
+  avgSufferScore: number | null
+}
+
+/** Aggregate Strava-only metrics (cadence, power, energy, effort) over a date range — data the coach never sees from manual logging. */
+export async function fetchStravaStatsSummary(profileId: string, from: string, to: string): Promise<StravaStatsSummary> {
+  const { data, error } = await supabase
+    .from('strava_activities')
+    .select('total_elevation_gain_m, average_heartrate, average_cadence, average_watts, kilojoules, suffer_score')
+    .eq('profile_id', profileId)
+    .gte('start_date', from)
+    .lt('start_date', to)
+  if (error) throw error
+  const rows = data ?? []
+  const avg = (vals: (number | null)[]) => {
+    const nums = vals.filter((v): v is number => v != null)
+    return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null
+  }
+  return {
+    count: rows.length,
+    totalElevationM: rows.reduce((sum, r) => sum + (r.total_elevation_gain_m ?? 0), 0),
+    avgHeartrate: avg(rows.map((r) => r.average_heartrate)),
+    avgCadence: avg(rows.map((r) => r.average_cadence)),
+    avgWatts: avg(rows.map((r) => r.average_watts)),
+    totalKilojoules: rows.reduce((sum, r) => sum + (r.kilojoules ?? 0), 0),
+    avgSufferScore: avg(rows.map((r) => r.suffer_score)),
+  }
+}
+
 /** Strava activity ids already linked to a session completion — used to avoid showing them twice on the calendar. */
 export async function fetchLinkedStravaActivityIds(profileId: string): Promise<Set<string>> {
   const { data, error } = await supabase

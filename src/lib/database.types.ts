@@ -820,6 +820,7 @@ export type Database = {
           free_session_duration_min: number | null
           free_session_title: string | null
           id: string
+          needs_confirmation: boolean
           note: string | null
           profile_id: string
           rpe: number | null
@@ -836,6 +837,7 @@ export type Database = {
           free_session_duration_min?: number | null
           free_session_title?: string | null
           id?: string
+          needs_confirmation?: boolean
           note?: string | null
           profile_id: string
           rpe?: number | null
@@ -852,6 +854,7 @@ export type Database = {
           free_session_duration_min?: number | null
           free_session_title?: string | null
           id?: string
+          needs_confirmation?: boolean
           note?: string | null
           profile_id?: string
           rpe?: number | null

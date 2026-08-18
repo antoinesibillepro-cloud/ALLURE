@@ -3,8 +3,9 @@ import { Card, SectionLabel } from '../components/ui'
 import { useApp } from '../context/AppContext'
 import WeeklyRecapModal from '../components/WeeklyRecapModal'
 import AddSessionSheet, { type SessionData } from '../components/AddSessionSheet'
+import SessionValidationForm from '../components/SessionValidationForm'
 import { useQuery } from '../lib/useQuery'
-import { fetchAthleteSessions, validateSession, logFreeSession, saveSessionSplits, fetchSessionWorkBlocks, type AthleteSession, type WorkBlockWithTargets } from '../lib/queries/sessions'
+import { fetchAthleteSessions, logFreeSession, saveSessionSplits, fetchSessionWorkBlocks, fetchSessionSplits, type AthleteSession, type WorkBlockWithTargets } from '../lib/queries/sessions'
 import { fetchTodayCheckin, saveCheckin, type DailyCheckin } from '../lib/queries/checkins'
 import { fetchAthleteWeekStats, fetchAthleteTotalKm, fetchLastActivity } from '../lib/queries/stats'
 import { fetchNextCompetition, fetchMyGroups, fetchWeightLogs, saveWeightLog, type WeightLog } from '../lib/queries/profileExtras'
@@ -270,7 +271,6 @@ export default function HomeScreen() {
   const [formSent, setFormSent] = useState(false)
   const [showRecap, setShowRecap] = useState(false)
   const [showAddSession, setShowAddSession] = useState(false)
-  const [validating, setValidating] = useState(false)
 
   const today = new Date()
   const todayIso = isoDate(today)
@@ -381,36 +381,15 @@ export default function HomeScreen() {
   const myGroupIds = new Set((myGroups ?? []).map((g) => g.id))
   const myWorkBlock = workBlocks?.find((b) => b.group_id && myGroupIds.has(b.group_id)) ?? null
 
-  const [rpe, setRpe] = useState<number | null>(null)
-  const [actualDistance, setActualDistance] = useState('')
-  const [actualDuration, setActualDuration] = useState('')
-  const [splits, setSplits] = useState<{ time: string; recovery: string }[]>([])
+  const needsConfirmation = !!(selectedSession?.completion?.status === 'done' && selectedSession.completion.needs_confirmation)
+  const { data: existingSplits } = useQuery(
+    () => (needsConfirmation && selectedSession?.completion ? fetchSessionSplits(selectedSession.completion.id) : Promise.resolve([])),
+    [selectedSession?.completion?.id, needsConfirmation],
+  )
 
-  function resetValidationForm() {
-    setRpe(null); setActualDistance(''); setActualDuration(''); setSplits([])
-  }
-
-  async function handleValidateSession() {
-    if (!profile || !selectedSession || rpe === null) return
-    setValidating(true)
-    try {
-      const distanceKm = actualDistance ? parseFloat(actualDistance.replace(',', '.')) : null
-      const durationMin = actualDuration ? parseInt(actualDuration, 10) : null
-      const completionId = await validateSession(selectedSession.id, profile.id, rpe, '', distanceKm, durationMin)
-      const parsedSplits = splits
-        .map((s, i) => ({
-          rep_number: i + 1,
-          time_seconds: parseFloat(s.time.replace(',', '.')),
-          recovery_seconds: s.recovery ? parseFloat(s.recovery.replace(',', '.')) : null,
-        }))
-        .filter((s) => !Number.isNaN(s.time_seconds) && s.time_seconds > 0)
-      if (parsedSplits.length > 0) await saveSessionSplits(completionId, parsedSplits)
-      await Promise.all([refetchToday(), refetchWeekSessions()])
-      setShowRpe(false)
-      resetValidationForm()
-    } finally {
-      setValidating(false)
-    }
+  async function handleSessionValidated() {
+    await Promise.all([refetchToday(), refetchWeekSessions()])
+    setShowRpe(false)
   }
 
   const overviewBlock = (
@@ -438,105 +417,6 @@ export default function HomeScreen() {
       <ACWRCard acwr={acwr} />
     </div>
   )
-
-  const RPE_OPTIONS = [{ v: 2, l: 'Facile' }, { v: 4, l: 'Modéré' }, { v: 6, l: 'Soutenu' }, { v: 8, l: 'Dur' }, { v: 10, l: 'Max' }]
-  const validationPace = (() => {
-    const d = actualDistance ? parseFloat(actualDistance.replace(',', '.')) : null
-    const m = actualDuration ? parseInt(actualDuration, 10) : null
-    if (!d || !m || d <= 0) return null
-    const secPerKm = (m * 60) / d
-    const mm = Math.floor(secPerKm / 60)
-    const ss = Math.round(secPerKm % 60)
-    return `${mm}'${ss.toString().padStart(2, '0')}"/km`
-  })()
-  function RpePicker() {
-    return (
-      <div className="mt-4 pt-4 space-y-4" style={{ borderTop: '1px solid var(--border)' }}>
-        <div>
-          <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-2)' }}>Ressenti de la séance (RPE)</p>
-          <div className="flex gap-1.5">
-            {RPE_OPTIONS.map((o) => (
-              <button key={o.v} disabled={validating} onClick={() => setRpe(o.v)}
-                className="flex-1 py-2 rounded-[10px] text-[10px] font-bold disabled:opacity-50"
-                style={{ background: rpe === o.v ? '#F2C400' : 'var(--surface2)', color: rpe === o.v ? '#0E0E0D' : 'var(--text-1)' }}>
-                {o.l}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-2)' }}>Distance réelle (km)</p>
-            <input value={actualDistance} onChange={(e) => setActualDistance(e.target.value)} inputMode="decimal"
-              placeholder={selectedSession?.distance_km ? String(selectedSession.distance_km) : '—'}
-              className="w-full px-3 py-2 rounded-[10px] text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
-          </div>
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-2)' }}>Durée réelle (min)</p>
-            <input value={actualDuration} onChange={(e) => setActualDuration(e.target.value)} inputMode="numeric"
-              placeholder={selectedSession?.duration_min ? String(selectedSession.duration_min) : '—'}
-              className="w-full px-3 py-2 rounded-[10px] text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
-          </div>
-        </div>
-        {validationPace && (
-          <p className="text-xs -mt-2" style={{ color: '#F2C400' }}>Allure moyenne : <span className="font-bold">{validationPace}</span></p>
-        )}
-
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>Chronos par répétition (optionnel)</p>
-            <div className="flex items-center gap-3">
-              {!!myWorkBlock?.target_splits.length && splits.length === 0 && (
-                <button onClick={() => setSplits(myWorkBlock.target_splits.map((t) => ({ time: '', recovery: t.recovery_seconds ? String(t.recovery_seconds) : '' })))} className="text-xs font-bold" style={{ color: '#5B91D8' }}>
-                  Pré-remplir ({myWorkBlock.target_splits.length})
-                </button>
-              )}
-              <button onClick={() => setSplits((p) => [...p, { time: '', recovery: '' }])} className="text-xs font-bold" style={{ color: '#F2C400' }}>+ Ajouter</button>
-            </div>
-          </div>
-          {!!myWorkBlock?.target_splits.length && (
-            <div className="flex flex-wrap gap-1 mb-1.5">
-              {myWorkBlock.target_splits.map((t, i) => (
-                <span key={i} className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
-                  #{i + 1}{t.distance_m ? ` ${t.distance_m}m` : ''} obj. {t.target_time_seconds}s{t.recovery_seconds ? ` · r${t.recovery_seconds}s` : ''}
-                </span>
-              ))}
-            </div>
-          )}
-          {splits.length > 0 && (
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2 pl-16">
-                <span className="flex-1 text-[9px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>Temps</span>
-                <span className="flex-1 text-[9px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-2)' }}>Récup</span>
-                <span className="w-4" />
-              </div>
-              {splits.map((s, i) => {
-                const target = myWorkBlock?.target_splits[i]?.target_time_seconds
-                return (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="text-xs w-14 shrink-0" style={{ color: 'var(--text-2)' }}>Rép. {i + 1}</span>
-                    <input value={s.time} onChange={(e) => setSplits((p) => p.map((v, j) => j === i ? { ...v, time: e.target.value } : v))}
-                      placeholder={target ? `cible ${target}s` : 'sec.'} inputMode="decimal"
-                      className="flex-1 min-w-0 px-3 py-1.5 rounded-[10px] text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
-                    <input value={s.recovery} onChange={(e) => setSplits((p) => p.map((v, j) => j === i ? { ...v, recovery: e.target.value } : v))}
-                      placeholder="sec." inputMode="decimal"
-                      className="flex-1 min-w-0 px-3 py-1.5 rounded-[10px] text-sm outline-none" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }} />
-                    <button onClick={() => setSplits((p) => p.filter((_, j) => j !== i))} className="text-xs shrink-0 w-4" style={{ color: '#E4574A' }}>×</button>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-
-        <button onClick={handleValidateSession} disabled={validating || rpe === null}
-          className="w-full py-3 rounded-[12px] text-sm font-bold disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
-          {validating ? 'Enregistrement…' : 'Enregistrer la séance'}
-        </button>
-      </div>
-    )
-  }
 
   async function handleSaveCheckin() {
     if (!profile) return
@@ -592,15 +472,18 @@ export default function HomeScreen() {
     </Card>
   )
 
-  const isDone = selectedSession?.completion?.status === 'done'
+  const isDone = selectedSession?.completion?.status === 'done' && !needsConfirmation
   const sessionCard = (
     <Card lift>
       <div className="flex items-center justify-between mb-3">
         <SectionLabel>{selectedIsToday ? 'Séance du jour' : `Séance du ${selectedDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}`}</SectionLabel>
         {selectedSession && (
           <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-            style={{ background: isDone ? 'rgba(94,186,101,0.15)' : 'rgba(242,196,0,0.15)', color: isDone ? '#5EBA65' : '#F2C400' }}>
-            {isDone ? 'Faite' : 'À faire'}
+            style={{
+              background: isDone ? 'rgba(94,186,101,0.15)' : needsConfirmation ? 'rgba(252,82,0,0.12)' : 'rgba(242,196,0,0.15)',
+              color: isDone ? '#5EBA65' : needsConfirmation ? '#FC5200' : '#F2C400',
+            }}>
+            {isDone ? 'Faite' : needsConfirmation ? 'À confirmer' : 'À faire'}
           </span>
         )}
       </div>
@@ -622,13 +505,23 @@ export default function HomeScreen() {
               </div>
             ))}
           </div>
-          {!isDone && !showRpe && (
+          {!isDone && !needsConfirmation && !showRpe && (
             <button onClick={() => setShowRpe(true)}
               className="btn-press w-full mt-4 rounded-[12px] py-3 text-sm font-bold bg-[#F2C400] text-[#0E0E0D]">
               Valider la séance
             </button>
           )}
-          {!isDone && showRpe && <RpePicker />}
+          {!isDone && (showRpe || needsConfirmation) && profile && (
+            <SessionValidationForm
+              sessionId={selectedSession.id} profileId={profile.id}
+              plannedDistanceKm={selectedSession.distance_km} plannedDurationMin={selectedSession.duration_min}
+              workBlock={myWorkBlock} needsConfirmation={needsConfirmation}
+              initialDistanceKm={needsConfirmation ? selectedSession.completion?.actual_distance_km : undefined}
+              initialDurationMin={needsConfirmation ? selectedSession.completion?.actual_duration_min : undefined}
+              initialSplits={needsConfirmation ? (existingSplits ?? []).map((s) => ({ time: String(s.time_seconds), recovery: s.recovery_seconds != null ? String(s.recovery_seconds) : '' })) : undefined}
+              onValidated={handleSessionValidated}
+            />
+          )}
         </>
       )}
     </Card>
@@ -848,8 +741,12 @@ export default function HomeScreen() {
                   </div>
                   {selectedSession && (
                     <span className="text-[10px] font-bold px-2.5 py-1 rounded-full"
-                      style={{ background: isDone ? 'rgba(94,186,101,0.12)' : 'rgba(242,196,0,0.12)', color: isDone ? '#5EBA65' : '#F2C400', border: `1px solid ${isDone ? 'rgba(94,186,101,0.2)' : 'rgba(242,196,0,0.2)'}` }}>
-                      {isDone ? 'FAITE' : 'PLANIFIÉE'}
+                      style={{
+                        background: isDone ? 'rgba(94,186,101,0.12)' : needsConfirmation ? 'rgba(252,82,0,0.12)' : 'rgba(242,196,0,0.12)',
+                        color: isDone ? '#5EBA65' : needsConfirmation ? '#FC5200' : '#F2C400',
+                        border: `1px solid ${isDone ? 'rgba(94,186,101,0.2)' : needsConfirmation ? 'rgba(252,82,0,0.25)' : 'rgba(242,196,0,0.2)'}`,
+                      }}>
+                      {isDone ? 'FAITE' : needsConfirmation ? 'À CONFIRMER' : 'PLANIFIÉE'}
                     </span>
                   )}
                 </div>
@@ -885,7 +782,7 @@ export default function HomeScreen() {
                     </div>
 
                     {/* Action bar */}
-                    {!isDone && !showRpe && (
+                    {!isDone && !needsConfirmation && !showRpe && (
                       <div className="flex items-center gap-3 px-4 py-3" style={{ borderTop: '1px solid var(--border)' }}>
                         <button onClick={() => setShowRpe(true)}
                           className="btn-press flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-[#F2C400] text-[#0E0E0D]">
@@ -893,7 +790,19 @@ export default function HomeScreen() {
                         </button>
                       </div>
                     )}
-                    {!isDone && showRpe && <div className="px-4 pb-4"><RpePicker /></div>}
+                    {!isDone && (showRpe || needsConfirmation) && profile && (
+                      <div className="px-4 pb-4">
+                        <SessionValidationForm
+                          sessionId={selectedSession.id} profileId={profile.id}
+                          plannedDistanceKm={selectedSession.distance_km} plannedDurationMin={selectedSession.duration_min}
+                          workBlock={myWorkBlock} needsConfirmation={needsConfirmation}
+                          initialDistanceKm={needsConfirmation ? selectedSession.completion?.actual_distance_km : undefined}
+                          initialDurationMin={needsConfirmation ? selectedSession.completion?.actual_duration_min : undefined}
+                          initialSplits={needsConfirmation ? (existingSplits ?? []).map((s) => ({ time: String(s.time_seconds), recovery: s.recovery_seconds != null ? String(s.recovery_seconds) : '' })) : undefined}
+                          onValidated={handleSessionValidated}
+                        />
+                      </div>
+                    )}
                   </>
                 )}
               </div>

@@ -8,6 +8,7 @@ import { fetchDisciplineBreakdown, fetchWeeklyLoad, fetchDisciplineTotals, type 
 import {
   fetchPersonalRecords, createPersonalRecord, updatePersonalRecord, deletePersonalRecord, type PersonalRecord,
 } from '../lib/queries/profileExtras'
+import { fetchStravaStatsSummary, type StravaStatsSummary } from '../lib/queries/strava'
 import { DonutChart, LoadChart, AreaTrendChart, GenericDonutChart } from '../components/charts'
 import AthleteDesktopSidebar from '../components/AthleteDesktopSidebar'
 import AthleteDesktopRail from '../components/AthleteDesktopRail'
@@ -123,6 +124,10 @@ export default function StatsScreen() {
   )
   const { data: disciplineTotals } = useQuery<DisciplineTotal[]>(
     () => (profile ? fetchDisciplineTotals(profile.id) : Promise.resolve([])),
+    [profile?.id],
+  )
+  const { data: stravaStats } = useQuery<StravaStatsSummary | null>(
+    () => (profile ? fetchStravaStatsSummary(profile.id, monthAgo, new Date().toISOString()) : Promise.resolve(null)),
     [profile?.id],
   )
   const { data: weeklyKm } = useQuery(
@@ -354,6 +359,32 @@ export default function StatsScreen() {
               <DonutChart segments={breakdown.filter((d) => d.km > 0)} weightBy="km" />
             )}
           </Card>
+
+          {!!stravaStats?.count && (
+            <Card>
+              <div className="flex items-center gap-1.5 mb-4">
+                <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
+                  <path d="M6 1L7.5 4.5H11L8 6.5L9.5 10.5L6 8L2.5 10.5L4 6.5L1 4.5H4.5L6 1Z" fill="#FC5200" />
+                </svg>
+                <p className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>Données Strava · 30 derniers jours</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: 'Cadence moy.', value: stravaStats.avgCadence ? `${Math.round(stravaStats.avgCadence)}` : '—' },
+                  { label: 'Puissance moy.', value: stravaStats.avgWatts ? `${Math.round(stravaStats.avgWatts)} W` : '—' },
+                  { label: 'Énergie', value: stravaStats.totalKilojoules ? `${Math.round(stravaStats.totalKilojoules)} kJ` : '—' },
+                  { label: 'Effort Strava moy.', value: stravaStats.avgSufferScore ? `${Math.round(stravaStats.avgSufferScore)}` : '—' },
+                  { label: 'FC moyenne', value: stravaStats.avgHeartrate ? `${Math.round(stravaStats.avgHeartrate)} bpm` : '—' },
+                  { label: 'Dénivelé cumulé', value: stravaStats.totalElevationM ? `${Math.round(stravaStats.totalElevationM)} m` : '—' },
+                ].map((s) => (
+                  <div key={s.label} className="rounded-xl py-2.5 px-3" style={{ background: 'var(--surface2)' }}>
+                    <p className="text-base font-black" style={{ color: 'var(--text-1)' }}>{s.value}</p>
+                    <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-2)' }}>{s.label}</p>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
 
           <Card>
             <p className="text-base font-bold mb-0.5" style={{ color: 'var(--text-1)' }}>Charge d&apos;entraînement</p>

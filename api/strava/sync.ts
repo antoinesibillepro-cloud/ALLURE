@@ -63,6 +63,7 @@ async function autoCompleteMatchingSessions(
       actual_duration_min: Math.round(run.moving_time_s / 60),
       completed_at: run.start_date,
       strava_activity_id: run.id,
+      needs_confirmation: true,
     }, { onConflict: 'session_id,profile_id' }).select('id').single()
     if (completionErr || !completion) continue
 

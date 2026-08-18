@@ -1,14 +1,15 @@
 import { useState } from 'react'
 import { Card, SectionLabel } from '../components/ui'
 import AddSessionSheet, { type SessionData, type InitialSession } from '../components/AddSessionSheet'
+import SessionValidationForm from '../components/SessionValidationForm'
 import { useApp } from '../context/AppContext'
 import { useQuery } from '../lib/useQuery'
 import {
-  fetchAthleteSessions, validateSession, logFreeSession, updateFreeSession, deleteFreeSession, fetchFreeSessions,
-  fetchSessionSplits, saveSessionSplits, type AthleteSession, type FreeSession,
+  fetchAthleteSessions, logFreeSession, updateFreeSession, deleteFreeSession, fetchFreeSessions,
+  fetchSessionSplits, saveSessionSplits, fetchSessionWorkBlocks, type AthleteSession, type FreeSession, type WorkBlockWithTargets,
 } from '../lib/queries/sessions'
 import { fetchStravaStatus, connectStrava, syncStrava, fetchStravaActivities, fetchLinkedStravaActivityIds, type StravaActivity } from '../lib/queries/strava'
-import { fetchCompetitions, createCompetition, toggleCompetitionDone, deleteCompetition, updateVma, type Competition } from '../lib/queries/profileExtras'
+import { fetchCompetitions, createCompetition, toggleCompetitionDone, deleteCompetition, updateVma, fetchMyGroups, type Competition } from '../lib/queries/profileExtras'
 import { fetchCrossTrainingLogs, createCrossTrainingLog, updateCrossTrainingLog, deleteCrossTrainingLog, fetchWeeklyDisciplineKm, type CrossTrainingLog, type Discipline } from '../lib/queries/crossTraining'
 import { fetchAthleteRaces, type ClubRace, type RaceAssignment } from '../lib/queries/clubRaces'
 import { fetchStrengthMaxes, upsertStrengthMax, deleteStrengthMax, LOAD_PERCENT_TABLE, type StrengthMax } from '../lib/queries/strength'
@@ -63,7 +64,7 @@ function distanceLabel(m: number): string {
 }
 
 // ── data ─────────────────────────────────────────────────────────────────────
-type Chip = { id: string; label: string; done: boolean; description: string | null; sessionId: string | null; source: 'session' | 'strava' | 'free'; freeSession?: FreeSession }
+type Chip = { id: string; label: string; done: boolean; description: string | null; sessionId: string | null; source: 'session' | 'strava' | 'free'; freeSession?: FreeSession; athleteSession?: AthleteSession; needsConfirmation?: boolean }
 
 const VMA_ZONES = [
   { pct: 60, label: 'Footing très cool' },
@@ -96,7 +97,7 @@ export default function TrainingScreen() {
   const [vma, setVma] = useState(profile?.vma ?? 16)
   const [sessionSheet, setSessionSheet] = useState<{ mode: 'create' } | { mode: 'edit'; session: FreeSession; initial: InitialSession } | null>(null)
   const [loadingEditId, setLoadingEditId] = useState<string | null>(null)
-  const [validatingId, setValidatingId] = useState<string | null>(null)
+  const [validatingSessionId, setValidatingSessionId] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [showAddComp, setShowAddComp] = useState(false)
   const [newCompTitle, setNewCompTitle] = useState('')
@@ -318,7 +319,11 @@ export default function TrainingScreen() {
   for (const s of monthSessions ?? []) {
     const day = new Date(s.scheduled_at).getDate()
     dayChips[day] = dayChips[day] ?? []
-    dayChips[day].push({ id: s.id, label: s.title, done: s.completion?.status === 'done', description: s.description, sessionId: s.id, source: 'session' })
+    const needsConfirmation = !!(s.completion?.status === 'done' && s.completion.needs_confirmation)
+    dayChips[day].push({
+      id: s.id, label: s.title, done: s.completion?.status === 'done' && !needsConfirmation, description: s.description,
+      sessionId: s.id, source: 'session', athleteSession: s, needsConfirmation,
+    })
   }
   const DISCIPLINE_LABEL: Record<string, string> = { course: 'Course', velo: 'Vélo', natation: 'Natation', muscu: 'Musculation', kine: 'Kiné', autre: 'Autre' }
   for (const fs of freeSessions ?? []) {
@@ -350,20 +355,27 @@ export default function TrainingScreen() {
     })
   }
 
-  async function handleValidate(sessionId: string) {
-    if (!profile) return
-    setValidatingId(sessionId)
-    try {
-      await validateSession(sessionId, profile.id, 6, '')
-      await refetchMonth()
-    } finally {
-      setValidatingId(null)
-    }
-  }
-
   function selectedDayIso() {
     return new Date(now.getFullYear(), now.getMonth(), selectedDay, 12, 0, 0).toISOString()
   }
+
+  const validatingChip = Object.values(dayChips).flat().find((c) => c.sessionId === validatingSessionId)
+  const validatingSession = validatingChip?.athleteSession ?? null
+
+  const { data: myGroups } = useQuery(
+    () => (profile ? fetchMyGroups(profile.id) : Promise.resolve([])),
+    [profile?.id],
+  )
+  const { data: validatingWorkBlocks } = useQuery<WorkBlockWithTargets[]>(
+    () => (validatingSessionId ? fetchSessionWorkBlocks(validatingSessionId) : Promise.resolve([])),
+    [validatingSessionId],
+  )
+  const myGroupIds = new Set((myGroups ?? []).map((g) => g.id))
+  const validatingWorkBlock = validatingWorkBlocks?.find((b) => b.group_id && myGroupIds.has(b.group_id)) ?? null
+  const { data: validatingExistingSplits } = useQuery(
+    () => (validatingChip?.needsConfirmation && validatingSession?.completion ? fetchSessionSplits(validatingSession.completion.id) : Promise.resolve([])),
+    [validatingSession?.completion?.id, validatingChip?.needsConfirmation],
+  )
 
   async function handleLogFreeSession(data: SessionData) {
     if (!profile) return
@@ -581,31 +593,47 @@ export default function TrainingScreen() {
               const clickableFree = c.source === 'free' && c.freeSession
               const Row = clickableFree ? 'button' : 'div'
               return (
-                <Row key={c.id} onClick={clickableFree ? () => openEditFreeSession(c.freeSession!) : undefined}
-                  className="w-full flex items-center justify-between py-2.5 px-3 rounded-xl text-left"
-                  style={{ background: 'var(--surface2)' }}>
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-2 h-2 rounded-full shrink-0" style={{ background: c.source === 'strava' ? '#FC5200' : c.done ? '#5EBA65' : '#F2C400' }} />
-                    <div className="min-w-0">
-                      <span className="text-sm font-medium block truncate" style={{ color: 'var(--text-1)' }}>{c.label}</span>
-                      {c.description && <span className="text-xs block truncate" style={{ color: 'var(--text-2)' }}>{c.description}</span>}
+                <div key={c.id}>
+                  <Row onClick={clickableFree ? () => openEditFreeSession(c.freeSession!) : undefined}
+                    className="w-full flex items-center justify-between py-2.5 px-3 rounded-xl text-left"
+                    style={{ background: 'var(--surface2)' }}>
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ background: c.source === 'strava' ? '#FC5200' : c.needsConfirmation ? '#FC5200' : c.done ? '#5EBA65' : '#F2C400' }} />
+                      <div className="min-w-0">
+                        <span className="text-sm font-medium block truncate" style={{ color: 'var(--text-1)' }}>{c.label}</span>
+                        {c.description && <span className="text-xs block truncate" style={{ color: 'var(--text-2)' }}>{c.description}</span>}
+                      </div>
                     </div>
-                  </div>
-                  {c.source === 'strava' ? (
-                    <span className="text-xs font-semibold shrink-0" style={{ color: '#FC5200' }}>Strava</span>
-                  ) : c.source === 'free' ? (
-                    <span className="text-xs font-semibold shrink-0" style={{ color: '#5EBA65' }}>
-                      {loadingEditId === c.freeSession?.id ? '…' : 'Modifier'}
-                    </span>
-                  ) : c.done ? (
-                    <span className="text-xs font-semibold text-[#5EBA65] shrink-0">Réalisée</span>
-                  ) : (
-                    <button disabled={validatingId === c.sessionId} onClick={() => c.sessionId && handleValidate(c.sessionId)}
-                      className="text-xs font-bold px-3 py-1 rounded-full text-[#0E0E0D] disabled:opacity-50 shrink-0" style={{ background: '#F2C400' }}>
-                      {validatingId === c.sessionId ? '…' : 'Valider'}
-                    </button>
+                    {c.source === 'strava' ? (
+                      <span className="text-xs font-semibold shrink-0" style={{ color: '#FC5200' }}>Strava</span>
+                    ) : c.source === 'free' ? (
+                      <span className="text-xs font-semibold shrink-0" style={{ color: '#5EBA65' }}>
+                        {loadingEditId === c.freeSession?.id ? '…' : 'Modifier'}
+                      </span>
+                    ) : c.done ? (
+                      <span className="text-xs font-semibold text-[#5EBA65] shrink-0">Réalisée</span>
+                    ) : (
+                      <button onClick={() => c.sessionId && setValidatingSessionId((id) => id === c.sessionId ? null : c.sessionId)}
+                        className="text-xs font-bold px-3 py-1 rounded-full shrink-0"
+                        style={{ background: c.needsConfirmation ? '#FC5200' : '#F2C400', color: c.needsConfirmation ? '#fff' : '#0E0E0D' }}>
+                        {c.needsConfirmation ? 'À confirmer' : 'Valider'}
+                      </button>
+                    )}
+                  </Row>
+                  {validatingSessionId === c.sessionId && validatingSession && profile && (
+                    <div className="px-3">
+                      <SessionValidationForm
+                        sessionId={validatingSession.id} profileId={profile.id}
+                        plannedDistanceKm={validatingSession.distance_km} plannedDurationMin={validatingSession.duration_min}
+                        workBlock={validatingWorkBlock} needsConfirmation={c.needsConfirmation}
+                        initialDistanceKm={c.needsConfirmation ? validatingSession.completion?.actual_distance_km : undefined}
+                        initialDurationMin={c.needsConfirmation ? validatingSession.completion?.actual_duration_min : undefined}
+                        initialSplits={c.needsConfirmation ? (validatingExistingSplits ?? []).map((s) => ({ time: String(s.time_seconds), recovery: s.recovery_seconds != null ? String(s.recovery_seconds) : '' })) : undefined}
+                        onValidated={async () => { await refetchMonth(); setValidatingSessionId(null) }}
+                      />
+                    </div>
                   )}
-                </Row>
+                </div>
               )
             })}
           </div>

@@ -121,7 +121,7 @@ export interface AthleteSession {
   distance_km: number | null
   vma_percent: number | null
   scheduled_at: string
-  completion: { id: string; status: string; rpe: number | null; actual_distance_km: number | null; actual_duration_min: number | null } | null
+  completion: { id: string; status: string; rpe: number | null; actual_distance_km: number | null; actual_duration_min: number | null; needs_confirmation: boolean } | null
 }
 
 /** Sessions assigned to any group the athlete belongs to, in [from, to). */
@@ -154,7 +154,7 @@ export async function fetchAthleteSessions(profileId: string, from: string, to: 
 
   const { data: completions, error: compErr } = await supabase
     .from('session_completions')
-    .select('id, session_id, status, rpe, actual_distance_km, actual_duration_min')
+    .select('id, session_id, status, rpe, actual_distance_km, actual_duration_min, needs_confirmation')
     .eq('profile_id', profileId)
     .in('session_id', sessionIds)
   if (compErr) throw compErr
@@ -172,7 +172,7 @@ export async function validateSession(
     .upsert({
       session_id: sessionId, profile_id: profileId, status: 'done', rpe, note,
       actual_distance_km: actualDistanceKm ?? null, actual_duration_min: actualDurationMin ?? null,
-      completed_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(), needs_confirmation: false,
     }, { onConflict: 'session_id,profile_id' })
     .select('id')
     .single()
