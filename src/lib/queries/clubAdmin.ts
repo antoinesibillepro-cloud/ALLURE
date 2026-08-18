@@ -83,6 +83,20 @@ export async function createAccountViaAdmin(input: { email: string; password: st
   return res.json() as Promise<{ id: string; emailError: string | null }>
 }
 
+/** Sets the shared default password and emails welcome credentials + the PDF guide to the chosen members. */
+export async function sendWelcomeGuide(profileIds: string[]): Promise<{ targeted: number; sent: number; failed: number }> {
+  const { data: session } = await supabase.auth.getSession()
+  const token = session.session?.access_token
+  if (!token) throw new Error('Non authentifié')
+  const res = await fetch('/api/admin/send-welcome-guide', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ profileIds }),
+  })
+  if (!res.ok) throw new Error((await res.json()).error ?? "Échec de l'envoi")
+  return res.json()
+}
+
 /** Sets a fresh default password and emails the credentials to every athlete who has never logged in yet. */
 export async function bulkWelcomeAthletes(): Promise<{ targeted: number; sent: number; failed: number }> {
   const { data: session } = await supabase.auth.getSession()

@@ -4,7 +4,7 @@ import { useApp } from '../../context/AppContext'
 import { useQuery } from '../../lib/useQuery'
 import {
   fetchClubMembers, updateMemberRole, updateMemberName, updateMemberVma, updateMemberGroup, removeMember,
-  updateClubName, resetPasswordEmail, createAccountViaAdmin, sendMemberEmail, bulkWelcomeAthletes,
+  updateClubName, resetPasswordEmail, createAccountViaAdmin, sendMemberEmail, bulkWelcomeAthletes, sendWelcomeGuide,
   fetchClubInvites, createClubInvite, type ClubMember, type ClubInvite,
 } from '../../lib/queries/clubAdmin'
 import { fetchGroups, type GroupWithMembers } from '../../lib/queries/groups'
@@ -70,6 +70,11 @@ export default function CoachAdmin() {
   const [showBulkConfirm, setShowBulkConfirm] = useState(false)
   const [bulkSending, setBulkSending] = useState(false)
   const [bulkResult, setBulkResult] = useState<string | null>(null)
+
+  const [showGuideModal, setShowGuideModal] = useState(false)
+  const [guideSelectedIds, setGuideSelectedIds] = useState<Set<string>>(new Set())
+  const [guideSending, setGuideSending] = useState(false)
+  const [guideResult, setGuideResult] = useState<string | null>(null)
 
   const [memberDetail, setMemberDetail] = useState<ClubMember | null>(null)
   const [emailTarget, setEmailTarget] = useState<ClubMember | null>(null)
@@ -246,6 +251,34 @@ export default function CoachAdmin() {
     }
   }
 
+  function openGuideModal() {
+    setGuideSelectedIds(new Set(athletes.map((m) => m.id)))
+    setGuideResult(null)
+    setShowGuideModal(true)
+  }
+
+  function toggleGuideId(id: string) {
+    setGuideSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  async function handleSendGuide() {
+    if (!guideSelectedIds.size) return
+    setGuideSending(true)
+    setGuideResult(null)
+    try {
+      const r = await sendWelcomeGuide([...guideSelectedIds])
+      setGuideResult(`${r.sent} email${r.sent > 1 ? 's' : ''} envoyé${r.sent > 1 ? 's' : ''} sur ${r.targeted}${r.failed ? ` (${r.failed} échec${r.failed > 1 ? 's' : ''})` : ''}.`)
+    } catch (err) {
+      setGuideResult(err instanceof Error ? err.message : "Échec de l'envoi")
+    } finally {
+      setGuideSending(false)
+    }
+  }
+
   async function handleSendEmail() {
     if (!emailTarget || !emailSubject.trim() || !emailBody.trim()) return
     setSendingEmail(true)
@@ -377,6 +410,10 @@ export default function CoachAdmin() {
             <button onClick={() => { setShowBulkConfirm(true); setBulkResult(null) }}
               className="text-xs font-bold px-3 py-2 rounded-xl" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
               Relancer les athlètes sans compte actif
+            </button>
+            <button onClick={openGuideModal}
+              className="text-xs font-bold px-3 py-2 rounded-xl" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
+              Envoyer le guide de bienvenue
             </button>
           </div>
         </div>
@@ -595,6 +632,49 @@ export default function CoachAdmin() {
               <button onClick={() => setShowBulkConfirm(false)} disabled={bulkSending}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
                 Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showGuideModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
+          <div className="w-full max-w-md rounded-2xl p-5 space-y-3 max-h-[85vh] flex flex-col" style={{ background: 'var(--card)' }}>
+            <div className="flex items-center justify-between">
+              <p className="text-base font-bold" style={{ color: 'var(--text-1)' }}>Envoyer le guide de bienvenue</p>
+              <button onClick={() => setShowGuideModal(false)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'var(--surface2)', color: 'var(--text-2)' }}>
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
+              </button>
+            </div>
+            <p className="text-sm" style={{ color: 'var(--text-2)' }}>
+              Un email avec le guide PDF d&apos;utilisation et le mot de passe <span className="font-mono font-bold">APPCOACH123</span> sera
+              envoyé à chaque athlète coché ci-dessous (ça remplace aussi son mot de passe).
+            </p>
+            <button onClick={() => setGuideSelectedIds((prev) => (prev.size === athletes.length ? new Set() : new Set(athletes.map((a) => a.id))))}
+              className="text-xs font-semibold self-start" style={{ color: '#F2C400' }}>
+              {guideSelectedIds.size === athletes.length ? 'Tout désélectionner' : 'Tout sélectionner'}
+            </button>
+            <div className="flex-1 overflow-y-auto space-y-1 -mx-1 px-1">
+              {athletes.map((a) => (
+                <label key={a.id} className="flex items-center gap-2.5 py-1.5 cursor-pointer">
+                  <input type="checkbox" checked={guideSelectedIds.has(a.id)} onChange={() => toggleGuideId(a.id)} />
+                  <span className="text-sm flex-1 min-w-0 truncate" style={{ color: 'var(--text-1)' }}>{a.name}</span>
+                  <span className="text-xs shrink-0" style={{ color: 'var(--text-2)' }}>{a.email}</span>
+                </label>
+              ))}
+            </div>
+            {guideResult && (
+              <p className="text-xs" style={{ color: guideResult.includes('échec') ? '#E4574A' : '#5EBA65' }}>{guideResult}</p>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button onClick={handleSendGuide} disabled={guideSending || !guideSelectedIds.size}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold disabled:opacity-50" style={{ background: '#F2C400', color: '#0E0E0D' }}>
+                {guideSending ? 'Envoi…' : `Envoyer (${guideSelectedIds.size})`}
+              </button>
+              <button onClick={() => setShowGuideModal(false)} disabled={guideSending}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background: 'var(--surface2)', color: 'var(--text-1)' }}>
+                Fermer
               </button>
             </div>
           </div>
