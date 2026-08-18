@@ -33,9 +33,13 @@ const Ctx = createContext<AppCtx>({} as AppCtx)
 
 const THEME_KEY = 'allure-theme'
 
+function prefersDark(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
   const savedTheme = typeof localStorage !== 'undefined' ? localStorage.getItem(THEME_KEY) : null
-  const [isDark, setIsDark] = useState(savedTheme ? savedTheme === 'dark' : true)
+  const [isDark, setIsDark] = useState(savedTheme ? savedTheme === 'dark' : prefersDark())
   const [themeExplicit, setThemeExplicit] = useState(savedTheme !== null)
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -46,10 +50,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     document.documentElement.classList.toggle('dark', isDark)
   }, [isDark])
 
-  // Coaches default to light mode, athletes to dark — unless the person already picked a theme themselves.
+  // Follow the OS light/dark setting live, unless the person has explicitly picked a theme themselves.
   useEffect(() => {
-    if (profile && !themeExplicit) setIsDark(profile.role !== 'coach')
-  }, [profile, themeExplicit])
+    if (themeExplicit || typeof window === 'undefined' || !window.matchMedia) return
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const onChange = (e: MediaQueryListEvent) => setIsDark(e.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [themeExplicit])
 
   async function loadProfile(userId: string) {
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle()
