@@ -428,7 +428,7 @@ export default function HomeScreen() {
     if (!profile) return
     const id = await logFreeSession(profile.id, {
       title: data.title, distanceKm: data.distance ?? 0, durationMin: data.duration, discipline: data.sport,
-      rpe: data.rpe, note: data.notes, completedAt: new Date().toISOString(),
+      rpe: data.rpe, note: data.notes, completedAt: `${data.isoDate}T12:00:00`,
     })
     if (data.splits.length) await saveSessionSplits(id, data.splits.map((s, i) => ({ rep_number: i + 1, ...s })))
   }
@@ -922,7 +922,7 @@ export default function HomeScreen() {
           currentWeightKg: weightLogs?.length ? weightLogs[weightLogs.length - 1].weight_kg : null,
         }} />
       )}
-      {showAddSession && <AddSessionSheet onClose={() => setShowAddSession(false)} onSave={handleLogFreeSession} />}
+      {showAddSession && <AddSessionSheet isoDate={todayIso} onClose={() => setShowAddSession(false)} onSave={handleLogFreeSession} />}
     </div>
   )
 }

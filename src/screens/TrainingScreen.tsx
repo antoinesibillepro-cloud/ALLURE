@@ -325,9 +325,26 @@ export default function TrainingScreen() {
       sessionId: s.id, source: 'session', athleteSession: s, needsConfirmation,
     })
   }
+  // Strava activities the coach-session loop above didn't already claim — indexed by day + type,
+  // so a manually-logged free session for the same real outing can be suppressed instead of shown twice.
+  const STRAVA_TYPES_FOR_DISCIPLINE: Record<string, string[]> = {
+    course: ['Run', 'VirtualRun', 'TrailRun'], velo: ['Ride', 'VirtualRide', 'EBikeRide'], natation: ['Swim'],
+  }
+  const stravaDayTypes = new Map<number, Set<string>>()
+  for (const a of stravaActivities ?? []) {
+    if (linkedStravaIds?.has(a.id)) continue
+    const d = new Date(a.start_date)
+    if (d < monthStart || d >= monthEnd) continue
+    const day = d.getDate()
+    if (!stravaDayTypes.has(day)) stravaDayTypes.set(day, new Set())
+    stravaDayTypes.get(day)!.add(a.type)
+  }
+
   const DISCIPLINE_LABEL: Record<string, string> = { course: 'Course', velo: 'Vélo', natation: 'Natation', muscu: 'Musculation', kine: 'Kiné', autre: 'Autre' }
   for (const fs of freeSessions ?? []) {
     const day = new Date(fs.completed_at).getDate()
+    const compatTypes = STRAVA_TYPES_FOR_DISCIPLINE[fs.discipline ?? ''] ?? []
+    if (compatTypes.some((t) => stravaDayTypes.get(day)?.has(t))) continue // Strava already represents this outing — avoid a duplicate
     dayChips[day] = dayChips[day] ?? []
     const descParts = [
       fs.discipline ? DISCIPLINE_LABEL[fs.discipline] ?? fs.discipline : null,
@@ -355,10 +372,6 @@ export default function TrainingScreen() {
     })
   }
 
-  function selectedDayIso() {
-    return new Date(now.getFullYear(), now.getMonth(), selectedDay, 12, 0, 0).toISOString()
-  }
-
   const validatingChip = Object.values(dayChips).flat().find((c) => c.sessionId === validatingSessionId)
   const validatingSession = validatingChip?.athleteSession ?? null
 
@@ -381,16 +394,16 @@ export default function TrainingScreen() {
     if (!profile) return
     const id = await logFreeSession(profile.id, {
       title: data.title, distanceKm: data.distance ?? 0, durationMin: data.duration, discipline: data.sport,
-      rpe: data.rpe, note: data.notes, completedAt: selectedDayIso(),
+      rpe: data.rpe, note: data.notes, completedAt: `${data.isoDate}T12:00:00`,
     })
     if (data.splits.length) await saveSessionSplits(id, data.splits.map((s, i) => ({ rep_number: i + 1, ...s })))
     await refetchFree()
   }
 
-  async function handleUpdateFreeSessionRow(id: string, completedAt: string, data: SessionData) {
+  async function handleUpdateFreeSessionRow(id: string, data: SessionData) {
     await updateFreeSession(id, {
       title: data.title, distanceKm: data.distance ?? 0, durationMin: data.duration, discipline: data.sport,
-      rpe: data.rpe, note: data.notes, completedAt,
+      rpe: data.rpe, note: data.notes, completedAt: `${data.isoDate}T12:00:00`,
     })
     await saveSessionSplits(id, data.splits.map((s, i) => ({ rep_number: i + 1, ...s })))
     await refetchFree()
@@ -1280,11 +1293,11 @@ export default function TrainingScreen() {
 
       {sessionSheet && (
         <AddSessionSheet
-          date={new Date(now.getFullYear(), now.getMonth(), selectedDay).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          isoDate={sessionSheet.mode === 'edit' ? sessionSheet.session.completed_at.slice(0, 10) : isoDate(new Date(now.getFullYear(), now.getMonth(), selectedDay))}
           initial={sessionSheet.mode === 'edit' ? sessionSheet.initial : undefined}
           onClose={() => setSessionSheet(null)}
           onSave={sessionSheet.mode === 'edit'
-            ? (data) => handleUpdateFreeSessionRow(sessionSheet.session.id, sessionSheet.session.completed_at, data)
+            ? (data) => handleUpdateFreeSessionRow(sessionSheet.session.id, data)
             : handleLogFreeSession}
           onDelete={sessionSheet.mode === 'edit' ? () => handleDeleteFreeSessionRow(sessionSheet.session.id) : undefined}
         />

@@ -53,7 +53,8 @@ export interface InitialSession {
 }
 
 interface Props {
-  date?: string
+  /** The day this session is (or will be) logged on, YYYY-MM-DD — editable in the sheet. */
+  isoDate: string
   initial?: InitialSession
   onClose: () => void
   onSave?: (session: SessionData) => void
@@ -68,6 +69,7 @@ export interface SessionData {
   rpe: number
   notes: string
   splits: { time_seconds: number; recovery_seconds: number | null }[]
+  isoDate: string
 }
 
 function paceLabel(sport: Sport, distance: string, duration: number): string | null {
@@ -104,8 +106,9 @@ function RPEColor(rpe: number): string {
   return '#E4574A'
 }
 
-export default function AddSessionSheet({ date, initial, onClose, onSave, onDelete }: Props) {
+export default function AddSessionSheet({ isoDate, initial, onClose, onSave, onDelete }: Props) {
   const [visible, setVisible] = useState(false)
+  const [dateIso, setDateIso] = useState(isoDate)
   const [sport, setSport] = useState<Sport>(initial?.sport ?? 'course')
   const [title, setTitle] = useState(initial?.title ?? DEFAULT_TITLE['course'])
   const [duration, setDuration] = useState(initial?.duration ?? 60)
@@ -135,7 +138,7 @@ export default function AddSessionSheet({ date, initial, onClose, onSave, onDele
         recovery_seconds: s.recovery ? parseFloat(s.recovery.replace(',', '.')) : null,
       }))
       .filter((s) => !Number.isNaN(s.time_seconds) && s.time_seconds > 0)
-    const data: SessionData = { sport, title, duration, rpe, notes, splits: parsedSplits }
+    const data: SessionData = { sport, title, duration, rpe, notes, splits: parsedSplits, isoDate: dateIso }
     if (distance) data.distance = parseFloat(distance.replace(',', '.'))
     onSave?.(data)
     setSaved(true)
@@ -179,7 +182,9 @@ export default function AddSessionSheet({ date, initial, onClose, onSave, onDele
           <div className="flex items-center justify-between mb-5">
             <div>
               <h2 className="text-lg font-black" style={{ color: 'var(--text-1)' }}>{initial ? 'Modifier la séance' : 'Nouvelle séance'}</h2>
-              {date && <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>{date}</p>}
+              <p className="text-xs mt-0.5 capitalize" style={{ color: 'var(--text-2)' }}>
+                {new Date(dateIso + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+              </p>
             </div>
             <button onClick={close} className="w-8 h-8 rounded-full flex items-center justify-center"
               style={{ background: 'var(--surface2)' }}>
@@ -197,6 +202,12 @@ export default function AddSessionSheet({ date, initial, onClose, onSave, onDele
             </div>
           ) : (
             <>
+              {/* Date */}
+              <p className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-2)' }}>Date</p>
+              <input type="date" value={dateIso} onChange={(e) => e.target.value && setDateIso(e.target.value)}
+                className="w-full px-4 py-3 rounded-2xl text-sm font-semibold outline-none mb-5"
+                style={{ background: 'var(--surface2)', color: 'var(--text-1)', border: '1.5px solid var(--border)', colorScheme: 'dark' }} />
+
               {/* Sport selector */}
               <p className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-2)' }}>Sport</p>
               <div className="flex gap-2 mb-5 overflow-x-auto pb-1">
